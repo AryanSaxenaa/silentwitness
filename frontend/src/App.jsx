@@ -1,12 +1,17 @@
 import { useState } from 'react'
-import { Eye, LayoutGrid, List, Settings, X } from 'lucide-react'
+import { Eye, LayoutGrid, List, Settings, X, Radio } from 'lucide-react'
 import SearchBar from './components/SearchBar'
 import FilterPanel from './components/FilterPanel'
 import ResultsGrid from './components/ResultsGrid'
 import FrameModal from './components/FrameModal'
 import IndexPanel from './components/IndexPanel'
 import StatusBar from './components/StatusBar'
+import Timeline from './components/Timeline'
+import LiveFeedPanel from './components/LiveFeedPanel'
 import { searchFootage } from './api'
+import axios from 'axios'
+
+const API_BASE = import.meta.env.VITE_API_URL || ''
 
 export default function App() {
   const [results, setResults] = useState(null)
@@ -15,6 +20,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState('events') // 'events' | 'frames'
   const [selectedFrame, setSelectedFrame] = useState(null)
   const [showIndexPanel, setShowIndexPanel] = useState(false)
+  const [showLivePanel, setShowLivePanel] = useState(false)
   const [filters, setFilters] = useState({
     cameraId: null,
     date: null,
@@ -38,6 +44,34 @@ export default function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleVoiceResult = (data) => {
+    setResults(data)
+  }
+
+  const handleSimilaritySearch = async (frameId) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { data } = await axios.post(`${API_BASE}/api/search/similar`, {
+        frame_id: frameId,
+        limit: 20,
+      })
+      setResults({ ...data, query: `Similar to frame` })
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Similarity search failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleTimelineBucketClick = (bucket) => {
+    const time = bucket.time // "2026-04-13T10:05"
+    const [dateStr, timeStr] = time.split('T')
+    const [hour] = timeStr.split(':')
+    setFilters((f) => ({ ...f, date: dateStr, hourStart: parseInt(hour), hourEnd: parseInt(hour) + 1 }))
+    handleSearch(`activity at ${timeStr}`)
   }
 
   return (
@@ -86,9 +120,20 @@ export default function App() {
                 </button>
               </div>
 
+              {/* Live feed toggle */}
+              <button
+                onClick={() => { setShowLivePanel(!showLivePanel); setShowIndexPanel(false) }}
+                className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 ${
+                  showLivePanel ? 'border-red-500/50 text-red-400' : ''
+                }`}
+              >
+                <Radio size={13} />
+                Live
+              </button>
+
               {/* Index panel toggle */}
               <button
-                onClick={() => setShowIndexPanel(!showIndexPanel)}
+                onClick={() => { setShowIndexPanel(!showIndexPanel); setShowLivePanel(false) }}
                 className={`btn-secondary flex items-center gap-1.5 text-xs py-1.5 ${
                   showIndexPanel ? 'border-brand-500/50 text-brand-400' : ''
                 }`}
@@ -129,7 +174,11 @@ export default function App() {
             )}
 
             {/* Search bar */}
-            <SearchBar onSearch={handleSearch} loading={loading} />
+            <SearchBar
+              onSearch={handleSearch}
+              loading={loading}
+              onVoiceResult={handleVoiceResult}
+            />
 
             {/* Filters */}
             <FilterPanel filters={filters} onChange={setFilters} />
@@ -158,12 +207,22 @@ export default function App() {
               </div>
             )}
 
+            {/* Timeline */}
+            {!loading && (
+              <Timeline
+                cameraId={filters.cameraId}
+                date={filters.date}
+                onBucketClick={handleTimelineBucketClick}
+              />
+            )}
+
             {/* Results */}
             {!loading && results && (
               <ResultsGrid
                 results={results}
                 viewMode={viewMode}
                 onFrameSelect={setSelectedFrame}
+                onSimilaritySearch={handleSimilaritySearch}
               />
             )}
           </div>
@@ -174,14 +233,28 @@ export default function App() {
               <div className="glass rounded-xl p-4 sticky top-24">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-semibold text-white">Index Footage</h2>
-                  <button
-                    onClick={() => setShowIndexPanel(false)}
-                    className="p-1 text-gray-500 hover:text-gray-300 transition-colors"
-                  >
+                  <button onClick={() => setShowIndexPanel(false)} className="p-1 text-gray-500 hover:text-gray-300">
                     <X size={15} />
                   </button>
                 </div>
                 <IndexPanel />
+              </div>
+            </div>
+          )}
+
+          {/* Right: live feed panel */}
+          {showLivePanel && (
+            <div className="w-72 flex-shrink-0">
+              <div className="glass rounded-xl p-4 sticky top-24">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Radio size={13} className="text-red-400" /> Live Feed
+                  </h2>
+                  <button onClick={() => setShowLivePanel(false)} className="p-1 text-gray-500 hover:text-gray-300">
+                    <X size={15} />
+                  </button>
+                </div>
+                <LiveFeedPanel />
               </div>
             </div>
           )}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, Camera, Activity, ChevronDown, ChevronUp, Play, Layers } from 'lucide-react'
+import { Clock, Camera, Activity, ChevronDown, ChevronUp, Play, Layers, ScanSearch } from 'lucide-react'
 import { thumbnailUrl } from '../api'
 
 function formatTime(isoStr) {
@@ -38,13 +38,12 @@ function MotionBadge({ score }) {
   )
 }
 
-function FrameCard({ frame, onClick }) {
+function FrameCard({ frame, onClick, onSimilar }) {
   const thumb = thumbnailUrl(frame.thumbnail_path)
 
   return (
     <div
-      onClick={() => onClick(frame)}
-      className="card cursor-pointer hover:scale-[1.02] hover:border-brand-500/30 group relative overflow-hidden"
+      className="card hover:scale-[1.02] hover:border-brand-500/30 group relative overflow-hidden"
     >
       {/* Thumbnail */}
       <div className="aspect-video bg-surface-700 rounded-lg overflow-hidden mb-3 relative">
@@ -73,7 +72,7 @@ function FrameCard({ frame, onClick }) {
       {/* Metadata */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <div className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer" onClick={() => onClick(frame)}>
             <Camera size={11} />
             <span>{frame.camera_id}</span>
           </div>
@@ -85,12 +84,20 @@ function FrameCard({ frame, onClick }) {
           <span className="text-gray-600">·</span>
           <span className="font-mono">{frame.timestamp_sec}s</span>
         </div>
+        {onSimilar && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onSimilar(frame.frame_id) }}
+            className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-brand-400 transition-colors mt-1"
+          >
+            <ScanSearch size={10} /> Find similar moments
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
-function EventCard({ event, onFrameClick }) {
+function EventCard({ event, onFrameClick, onSimilar }) {
   const [expanded, setExpanded] = useState(false)
   const bestFrame = event.frames?.[0]
   const thumb = thumbnailUrl(event.thumbnail_path)
@@ -143,6 +150,14 @@ function EventCard({ event, onFrameClick }) {
               <span>{formatTime(event.end_time)}</span>
             </div>
             <div className="text-xs text-gray-600 font-mono">{event.video_file}</div>
+            {onSimilar && event.frames?.[0] && (
+              <button
+                onClick={() => onSimilar(event.frames[0].frame_id)}
+                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-brand-400 transition-colors mt-1"
+              >
+                <ScanSearch size={10} /> Find similar moments
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -193,7 +208,7 @@ function EventCard({ event, onFrameClick }) {
   )
 }
 
-export default function ResultsGrid({ results, viewMode = 'events', onFrameSelect }) {
+export default function ResultsGrid({ results, viewMode = 'events', onFrameSelect, onSimilaritySearch }) {
   if (!results) return null
 
   const { total_results, total_events, events, frames, query } = results
@@ -225,7 +240,12 @@ export default function ResultsGrid({ results, viewMode = 'events', onFrameSelec
       {viewMode === 'events' && events?.length > 0 && (
         <div className="space-y-3">
           {events.map((event) => (
-            <EventCard key={event.event_id} event={event} onFrameClick={onFrameSelect} />
+            <EventCard
+              key={event.event_id}
+              event={event}
+              onFrameClick={onFrameSelect}
+              onSimilar={onSimilaritySearch}
+            />
           ))}
         </div>
       )}
@@ -234,7 +254,12 @@ export default function ResultsGrid({ results, viewMode = 'events', onFrameSelec
       {viewMode === 'frames' && frames?.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
           {frames.map((frame) => (
-            <FrameCard key={frame.frame_id} frame={frame} onClick={onFrameSelect} />
+            <FrameCard
+              key={frame.frame_id}
+              frame={frame}
+              onClick={onFrameSelect}
+              onSimilar={onSimilaritySearch}
+            />
           ))}
         </div>
       )}

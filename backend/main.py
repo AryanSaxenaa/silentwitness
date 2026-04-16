@@ -19,6 +19,9 @@ from config import FOOTAGE_DIR, THUMBNAILS_DIR, DATA_DIR, COLLECTION_NAME
 from db import get_client, ensure_collection, collection_stats
 from indexer import index_video, index_all_footage, get_clip_model
 from searcher import search, SearchFilters, list_cameras
+from searcher_similarity import search_similar
+from voice import transcribe_audio_bytes, get_whisper_model
+from live import start_live_feed, stop_live_feed, get_live_status
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -38,9 +41,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"VectorAI DB not available at startup: {e}. Will retry on first request.")
 
-    # Warm up CLIP in background so first search is fast
+    # Warm up CLIP and Whisper in background so first use is instant
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, get_clip_model)
+    loop.run_in_executor(None, get_whisper_model)
 
     yield
     logger.info("SilentWitness shutting down.")
@@ -226,6 +230,196 @@ def get_job_status(job_id: str):
     if job_id not in indexing_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     return indexing_jobs[job_id]
+
+
+# ─── Voice query ────────────────────────────────────────────────────────────────
+
+@app.post("/api/voice")
+async def voice_query(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    camera_id: Optional[str] = None,
+    date: Optional[str] = None,
+    hour_start: Optional[int] = None,
+    hour_end: Optional[int] = None,
+    min_motion_score: Optional[float] = None,
+    limit: int = 20,
+):
+    """
+    Transcribe audio with local Whisper, then run semantic search.
+    Audio is processed entirely on-device — no cloud API calls.
+    Accepts: webm, wav, mp3, ogg, m4a
+    """
+    audio_bytes = await audio.read()
+    try:
+        text = transcribe_audio_bytes(audio_bytes, mime_type=audio.content_type or "audio/webm")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {e}")
+
+    if not text:
+        raise HTTPException(status_code=422, detail="No speech detected in audio")
+
+    filters = SearchFilters(
+        camera_id=camera_id,
+        date=date,
+        hour_start=hour_start,
+        hour_end=hour_end,
+        min_motion_score=min_motion_score,
+    )
+    results = search(query=text, filters=filters, limit=limit, group_into_events=True)
+    return {"transcribed_query": text, **results}
+
+
+# ─── Similarity search ────────────────────────────────────────────────────────
+
+class SimilarityRequest(BaseModel):
+    frame_id: str
+    camera_id: Optional[str] = None
+    date: Optional[str] = None
+    hour_start: Optional[int] = None
+    hour_end: Optional[int] = None
+    min_motion_score: Optional[float] = None
+    exclude_same_video: bool = False
+    limit: int = 20
+
+
+@app.post("/api/search/similar")
+def search_similar_frames(req: SimilarityRequest):
+    """
+    Find frames visually similar to an existing indexed frame.
+    Uses the stored CLIP vector directly — no text query, no re-embedding.
+    The 'find every time this person appeared' feature.
+    """
+    filters = SearchFilters(
+        camera_id=req.camera_id,
+        date=req.date,
+        hour_start=req.hour_start,
+        hour_end=req.hour_end,
+        min_motion_score=req.min_motion_score,
+    )
+    try:
+        return search_similar(
+            frame_id=req.frame_id,
+            filters=filters,
+            limit=req.limit,
+            exclude_same_video=req.exclude_same_video,
+        )
+    except Exception as e:
+        logger.error(f"Similarity search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Timeline / activity heatmap ─────────────────────────────────────────────
+
+@app.get("/api/timeline")
+def get_timeline(
+    camera_id: Optional[str] = None,
+    date: Optional[str] = None,
+    bucket_minutes: int = 5,
+):
+    """
+    Returns activity heatmap data: frame counts bucketed by time.
+    Used to render the incident timeline visualization in the frontend.
+    """
+    try:
+        client = get_client()
+        # Scroll through all frames and bucket by time
+        from collections import defaultdict
+        from searcher import build_filter, SearchFilters
+
+        filters = SearchFilters(camera_id=camera_id, date=date)
+        db_filter = build_filter(filters)
+
+        buckets = defaultdict(lambda: {"count": 0, "max_motion": 0.0, "frames": []})
+
+        offset = None
+        while True:
+            results, next_offset = client.points.scroll(
+                COLLECTION_NAME,
+                limit=200,
+                offset=offset,
+                query_filter=db_filter,
+                with_payload=["absolute_time", "motion_score", "camera_id", "thumbnail_path", "timestamp_sec"],
+            )
+            for point in results:
+                p = point.payload
+                abs_time = p.get("absolute_time", "")
+                if not abs_time:
+                    continue
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(abs_time)
+                    # Bucket key: floor to bucket_minutes
+                    bucket_min = (dt.hour * 60 + dt.minute) // bucket_minutes * bucket_minutes
+                    bucket_key = f"{dt.date().isoformat()}T{bucket_min // 60:02d}:{bucket_min % 60:02d}"
+                    buckets[bucket_key]["count"] += 1
+                    motion = p.get("motion_score", 0.0)
+                    if motion > buckets[bucket_key]["max_motion"]:
+                        buckets[bucket_key]["max_motion"] = motion
+                    if len(buckets[bucket_key]["frames"]) < 3:
+                        buckets[bucket_key]["frames"].append({
+                            "frame_id": str(point.id),
+                            "thumbnail_path": p.get("thumbnail_path"),
+                            "timestamp_sec": p.get("timestamp_sec"),
+                            "absolute_time": abs_time,
+                        })
+                except Exception:
+                    continue
+
+            if next_offset is None or not results:
+                break
+            offset = next_offset
+
+        # Sort by bucket key
+        sorted_buckets = [
+            {"time": k, **v}
+            for k, v in sorted(buckets.items())
+        ]
+        return {
+            "camera_id": camera_id,
+            "date": date,
+            "bucket_minutes": bucket_minutes,
+            "total_buckets": len(sorted_buckets),
+            "timeline": sorted_buckets,
+        }
+    except Exception as e:
+        logger.error(f"Timeline failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Live webcam feed ─────────────────────────────────────────────────────────
+
+class LiveStartRequest(BaseModel):
+    source: str = "0"            # "0" = default webcam, or RTSP URL
+    camera_id: str = "live"
+    fps_sample: float = 1.0
+    min_motion_score: float = 0.01
+
+
+@app.post("/api/live/start")
+def live_start(req: LiveStartRequest):
+    """Start live webcam indexing in background thread."""
+    # Convert string "0" to int for webcam index
+    source = int(req.source) if req.source.isdigit() else req.source
+    result = start_live_feed(
+        source=source,
+        camera_id=req.camera_id,
+        fps_sample=req.fps_sample,
+        min_motion_score=req.min_motion_score,
+    )
+    return result
+
+
+@app.post("/api/live/stop")
+def live_stop(camera_id: str = "live"):
+    """Stop a running live feed indexer."""
+    return stop_live_feed(camera_id)
+
+
+@app.get("/api/live/status")
+def live_status():
+    """Get status of all live feed indexers."""
+    return get_live_status()
 
 
 # ─── Footage management ────────────────────────────────────────────────────────

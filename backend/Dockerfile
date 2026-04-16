@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libgomp1 \
     ffmpeg \
+    libavcodec-dev \
+    libavformat-dev \
+    libavdevice-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -17,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download CLIP model at build time so first run is instant
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('clip-ViT-B-32')"
+
+# Pre-download Whisper tiny model
+RUN python -c "import whisper; whisper.load_model('tiny')"
 
 COPY . .
 
