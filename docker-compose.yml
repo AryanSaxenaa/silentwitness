@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  vectoraidb:
+    image: williamimoh/actian-vectorai-db:latest
+    container_name: vectoraidb
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./data/vectorai:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: silentwitness-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./footage:/app/footage        # mount local footage folder
+      - ./data/index:/app/data        # frame thumbnails + metadata cache
+    environment:
+      - VECTORAI_HOST=vectoraidb
+      - VECTORAI_PORT=50051
+      - FOOTAGE_DIR=/app/footage
+      - DATA_DIR=/app/data
+      - FRAME_RATE=1                  # frames per second to index
+      - MOTION_THRESHOLD=25           # pixel diff threshold for motion detection
+    depends_on:
+      - vectoraidb
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: silentwitness-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
