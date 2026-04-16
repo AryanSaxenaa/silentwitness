@@ -8,10 +8,7 @@ import IndexPanel from './components/IndexPanel'
 import StatusBar from './components/StatusBar'
 import Timeline from './components/Timeline'
 import LiveFeedPanel from './components/LiveFeedPanel'
-import { searchFootage } from './api'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_URL || ''
+import { searchFootage, searchSimilar } from './api'
 
 /* ── Matrix strip background (supermemory number-art) ── */
 function MatrixStrip() {
@@ -95,8 +92,9 @@ export default function App() {
   const handleSimilaritySearch = async (frameId) => {
     setLoading(true)
     setError(null)
+    setHasSearched(true)
     try {
-      const { data } = await axios.post(`${API_BASE}/api/search/similar`, { frame_id: frameId, limit: 20 })
+      const data = await searchSimilar({ frameId, limit: 20 })
       setResults({ ...data, query: 'visually similar frames' })
     } catch (err) {
       setError(err?.response?.data?.detail || 'Similarity search failed')
@@ -108,8 +106,19 @@ export default function App() {
   const handleTimelineBucketClick = (bucket) => {
     const [dateStr, timeStr] = bucket.time.split('T')
     const hour = parseInt(timeStr.split(':')[0])
-    setFilters((f) => ({ ...f, date: dateStr, hourStart: hour, hourEnd: hour + 1 }))
-    handleSearch(`activity at ${timeStr}`)
+    // Build the new filters directly and pass them to a one-shot search.
+    // We cannot call setFilters() then handleSearch() consecutively because
+    // React state updates are async — handleSearch would read the stale filters closure.
+    const newFilters = { ...filters, date: dateStr, hourStart: hour, hourEnd: hour + 1 }
+    setFilters(newFilters)
+    // Kick off search with the explicitly-built filters object
+    setLoading(true)
+    setError(null)
+    setHasSearched(true)
+    searchFootage({ query: `activity at ${timeStr}`, ...newFilters, groupIntoEvents: viewMode === 'events' })
+      .then(setResults)
+      .catch((err) => setError(err?.response?.data?.detail || 'Search failed — is the backend running?'))
+      .finally(() => setLoading(false))
   }
 
   const TOTAL_SECTIONS = showIndexPanel || showLivePanel ? 3 : 2

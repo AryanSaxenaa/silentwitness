@@ -131,7 +131,11 @@ export default function FilterPanel({ filters, onChange }) {
             <input
               type="range" min={0} max={1} step={0.01}
               value={filters.minMotionScore ?? 0}
-              onChange={(e) => update('minMotionScore', parseFloat(e.target.value) || null)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value)
+                // parseFloat('0') || null would wrongly produce null — check explicitly
+                update('minMotionScore', (isNaN(val) || val === 0) ? null : val)
+              }}
               className="w-full h-1 rounded-full appearance-none cursor-pointer"
               style={{ accentColor: 'var(--accent)' }}
             />

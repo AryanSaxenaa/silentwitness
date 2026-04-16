@@ -104,6 +104,8 @@ class LiveIndexer:
 
     # ── Internal loops ──────────────────────────────────────────────────────
 
+    MAX_RECONNECT_ATTEMPTS = 10
+
     def _capture_loop(self):
         """Capture frames from webcam / stream, apply motion gate, enqueue."""
         cap = cv2.VideoCapture(self.source)
@@ -117,20 +119,29 @@ class LiveIndexer:
         frame_interval = max(1, int(video_fps / self.fps_sample))
         frame_idx = 0
         prev_gray = None
+        reconnect_count = 0
 
         logger.info(f"Capture loop: fps={video_fps:.1f}, interval={frame_interval}")
 
         while not self._stop_event.is_set():
             ret, frame = cap.read()
             if not ret:
-                # Stream ended or camera disconnected — retry after brief pause
-                logger.warning("Frame read failed, retrying in 1s...")
-                time.sleep(1.0)
+                # Stream ended or camera disconnected — retry with backoff
+                reconnect_count += 1
+                if reconnect_count > self.MAX_RECONNECT_ATTEMPTS:
+                    self.error = f"Video source lost after {self.MAX_RECONNECT_ATTEMPTS} reconnect attempts"
+                    self.running = False
+                    logger.error(self.error)
+                    break
+                backoff = min(reconnect_count * 1.0, 10.0)  # max 10s backoff
+                logger.warning(f"Frame read failed (attempt {reconnect_count}/{self.MAX_RECONNECT_ATTEMPTS}), retrying in {backoff:.0f}s...")
+                time.sleep(backoff)
                 cap.release()
                 cap = cv2.VideoCapture(self.source)
                 frame_idx = 0
                 prev_gray = None
                 continue
+            reconnect_count = 0  # reset on successful read
 
             if frame_idx % frame_interval == 0:
                 curr_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

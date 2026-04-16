@@ -31,16 +31,22 @@ services:
       - FRAME_RATE=1                  # frames per second to index
       - MOTION_THRESHOLD=25           # pixel diff threshold for motion detection
     depends_on:
-      - vectoraidb
+      vectoraidb:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # VITE_API_URL is a build-time variable baked into the JS bundle by Vite.
+      # Passing it as a runtime env var to the nginx container has no effect.
+      # The nginx.conf proxies /api/ and /thumbnails/ to http://backend:8000
+      # so no VITE_API_URL is needed at all — the browser uses relative paths.
+      args:
+        - VITE_API_URL=
     container_name: silentwitness-frontend
     ports:
       - "3000:3000"
-    environment:
-      - VITE_API_URL=http://localhost:8000
     depends_on:
       - backend
     restart: unless-stopped

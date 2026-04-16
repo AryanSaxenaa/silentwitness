@@ -1,9 +1,6 @@
-import { useEffect, useState, useRef } from 'react'
-import { Activity, Camera, ChevronDown, ChevronUp } from 'lucide-react'
-import axios from 'axios'
-import { thumbnailUrl } from '../api'
-
-const API_BASE = import.meta.env.VITE_API_URL || ''
+import { useEffect, useState } from 'react'
+import { Activity, ChevronDown, ChevronUp } from 'lucide-react'
+import { getTimeline, thumbnailUrl } from '../api'
 
 function formatBucketTime(timeStr) {
   // "2026-04-13T10:05" → "10:05"
@@ -19,19 +16,11 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(true)
   const [hoveredBucket, setHoveredBucket] = useState(null)
-  const tooltipRef = useRef(null)
-
-  useEffect(() => {
-    if (!data && !loading) return // only fetch when explicitly requested
-  }, [])
 
   const fetchTimeline = async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ bucket_minutes: 5 })
-      if (cameraId) params.append('camera_id', cameraId)
-      if (date) params.append('date', date)
-      const { data: d } = await axios.get(`${API_BASE}/api/timeline?${params}`)
+      const d = await getTimeline({ cameraId, date, bucketMinutes: 5 })
       setData(d)
     } catch (e) {
       console.error('Timeline fetch failed', e)
@@ -47,8 +36,15 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
   if (!data && !loading) return null
   if (loading) {
     return (
-      <div className="glass rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-gray-500">
-        <Activity size={14} className="animate-pulse" />
+      <div
+        className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm animate-pulse"
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-muted)',
+        }}
+      >
+        <Activity size={14} />
         Loading activity timeline...
       </div>
     )
@@ -66,68 +62,88 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
   }, {})
 
   return (
-    <div className="glass rounded-xl overflow-hidden">
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+    >
+      {/* Header */}
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-300
-                   hover:text-white transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
+        style={{ color: 'var(--text-secondary)' }}
+        onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-secondary)'}
       >
         <div className="flex items-center gap-2">
-          <Activity size={14} className="text-brand-500" />
-          <span className="font-medium">Activity Timeline</span>
-          <span className="badge bg-surface-600 text-gray-400">
-            {data.total_buckets} time windows
-          </span>
+          <Activity size={14} style={{ color: 'var(--accent)' }} />
+          <span className="font-medium text-sm">Activity Timeline</span>
+          <span className="badge badge-gray">{data.total_buckets} windows</span>
         </div>
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        {open
+          ? <ChevronUp size={14} style={{ color: 'var(--text-muted)' }} />
+          : <ChevronDown size={14} style={{ color: 'var(--text-muted)' }} />
+        }
       </button>
 
       {open && (
-        <div className="px-4 pb-4 border-t border-white/5 pt-4 space-y-4">
+        <div
+          className="px-4 pb-4 space-y-4"
+          style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}
+        >
           {Object.entries(byDate).map(([dateStr, buckets]) => (
             <div key={dateStr}>
-              <div className="text-xs text-gray-500 mb-2">{dateStr}</div>
+              <div className="section-label mb-2">{dateStr}</div>
 
               {/* Heatmap bar */}
-              <div className="flex items-end gap-0.5 h-16 overflow-x-auto pb-1">
+              <div className="flex items-end gap-0.5 overflow-x-auto pb-1" style={{ height: '64px' }}>
                 {buckets.map((bucket) => {
                   const heightPct = Math.max(4, (bucket.count / maxCount) * 100)
                   const isHot = bucket.max_motion > 0.3
+                  const isMid = bucket.count > maxCount * 0.5
                   const isHovered = hoveredBucket?.time === bucket.time
+
+                  let barBg = 'rgba(59,130,246,0.35)'
+                  if (isHot) barBg = 'rgba(239,68,68,0.65)'
+                  else if (isMid) barBg = 'rgba(245,158,11,0.55)'
+
+                  let barHoverBg = 'rgba(59,130,246,0.6)'
+                  if (isHot) barHoverBg = 'rgba(239,68,68,0.85)'
+                  else if (isMid) barHoverBg = 'rgba(245,158,11,0.8)'
 
                   return (
                     <div
                       key={bucket.time}
-                      className="relative flex-shrink-0 group"
+                      className="relative flex-shrink-0 cursor-pointer"
                       style={{ width: '14px' }}
                       onMouseEnter={() => setHoveredBucket(bucket)}
                       onMouseLeave={() => setHoveredBucket(null)}
                       onClick={() => onBucketClick?.(bucket)}
                     >
-                      {/* Bar */}
                       <div
-                        className={`
-                          w-full rounded-sm cursor-pointer transition-all duration-150
-                          ${isHovered ? 'ring-1 ring-brand-500' : ''}
-                          ${isHot
-                            ? 'bg-red-500/70 hover:bg-red-400'
-                            : bucket.count > maxCount * 0.5
-                            ? 'bg-amber-500/60 hover:bg-amber-400'
-                            : 'bg-brand-500/40 hover:bg-brand-500/70'
-                          }
-                        `}
-                        style={{ height: `${heightPct}%` }}
+                        style={{
+                          width: '100%',
+                          height: `${heightPct}%`,
+                          background: barBg,
+                          borderRadius: '3px',
+                          outline: isHovered ? '1px solid var(--accent)' : 'none',
+                          transition: 'background 100ms',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = barHoverBg}
+                        onMouseLeave={e => e.currentTarget.style.background = barBg}
                       />
                     </div>
                   )
                 })}
               </div>
 
-              {/* X-axis labels — show every hour */}
-              <div className="flex items-center mt-1 text-[9px] text-gray-600 relative" style={{ height: '12px' }}>
+              {/* X-axis labels — every hour (12 buckets at 5min intervals) */}
+              <div
+                className="flex items-center mt-1 relative"
+                style={{ height: '12px', color: 'var(--text-muted)', fontSize: '9px' }}
+              >
                 {buckets
-                  .filter((_, i) => i % 12 === 0) // every 12 buckets = 1 hour at 5min intervals
-                  .map((bucket, i) => (
+                  .filter((_, i) => i % 12 === 0)
+                  .map((bucket) => (
                     <div
                       key={bucket.time}
                       className="absolute"
@@ -141,35 +157,43 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
           ))}
 
           {/* Legend */}
-          <div className="flex items-center gap-4 text-[10px] text-gray-500 pt-1">
+          <div className="flex items-center gap-4 pt-1" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm bg-brand-500/40" />
+              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(59,130,246,0.35)' }} />
               <span>Low activity</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm bg-amber-500/60" />
+              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(245,158,11,0.55)' }} />
               <span>Moderate</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm bg-red-500/70" />
+              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(239,68,68,0.65)' }} />
               <span>High motion</span>
             </div>
           </div>
 
           {/* Tooltip */}
           {hoveredBucket && (
-            <div className="glass rounded-lg p-3 border border-white/10 text-xs space-y-1">
-              <div className="text-gray-300 font-medium">{hoveredBucket.time}</div>
-              <div className="text-gray-500">
+            <div
+              className="rounded-xl p-3 space-y-1"
+              style={{
+                background: 'var(--bg-subtle)',
+                border: '1px solid var(--border-hover)',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{hoveredBucket.time}</div>
+              <div style={{ color: 'var(--text-secondary)' }}>
                 {hoveredBucket.count} frame{hoveredBucket.count !== 1 ? 's' : ''} indexed
                 · max motion: {Math.round(hoveredBucket.max_motion * 100)}%
               </div>
               {hoveredBucket.frames?.length > 0 && (
-                <div className="flex gap-1.5 pt-1">
+                <div className="flex gap-1.5 pt-1 items-center">
                   {hoveredBucket.frames.map((f) => (
                     <div
                       key={f.frame_id}
-                      className="w-16 aspect-video bg-surface-700 rounded overflow-hidden"
+                      className="rounded overflow-hidden flex-shrink-0"
+                      style={{ width: '64px', aspectRatio: '16/9', background: 'var(--bg-card)' }}
                     >
                       {thumbnailUrl(f.thumbnail_path) && (
                         <img
@@ -182,7 +206,8 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
                   ))}
                   <button
                     onClick={() => onBucketClick?.(hoveredBucket)}
-                    className="text-brand-400 hover:text-brand-300 self-center ml-1"
+                    className="btn-ghost ml-1"
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
                   >
                     Search this window →
                   </button>

@@ -54,7 +54,9 @@ def build_filter(filters: SearchFilters):
         conditions.append(Field("date").eq(filters.date))
 
     if filters.hour_start is not None and filters.hour_end is not None:
-        conditions.append(Field("hour").between(filters.hour_start, filters.hour_end))
+        # Use explicit gte + lte instead of .between() which may not exist in beta SDK
+        conditions.append(Field("hour").gte(filters.hour_start))
+        conditions.append(Field("hour").lte(filters.hour_end))
     elif filters.hour_start is not None:
         conditions.append(Field("hour").gte(filters.hour_start))
     elif filters.hour_end is not None:
@@ -113,29 +115,39 @@ def dbsf_fusion(
 def cluster_into_events(results: list[SearchResult], gap_sec: float = 10.0) -> list[dict]:
     """
     Group consecutive frames within gap_sec of each other into "events."
-    Returns list of event dicts, each with frames + event summary.
+    Groups by (camera_id, video_file) first, then by time proximity within that group.
+    This prevents live frames (Unix epoch timestamps) from clustering with pre-recorded frames.
     """
     if not results:
         return []
 
-    # Sort by time
-    sorted_results = sorted(results, key=lambda x: x.timestamp_sec)
-    events = []
-    current_event = [sorted_results[0]]
+    # Group by (camera_id, video_file) to prevent cross-video time collisions
+    from collections import defaultdict
+    video_groups: dict[tuple, list[SearchResult]] = defaultdict(list)
+    for r in results:
+        video_groups[(r.camera_id, r.video_file)].append(r)
 
-    for result in sorted_results[1:]:
-        prev_time = current_event[-1].timestamp_sec
-        if result.timestamp_sec - prev_time <= gap_sec:
-            current_event.append(result)
-        else:
-            events.append(_make_event(current_event))
-            current_event = [result]
+    all_events = []
+    for (cam, vid), group in video_groups.items():
+        # Sort by timestamp within this video
+        sorted_results = sorted(group, key=lambda x: x.timestamp_sec)
+        events = []
+        current_event = [sorted_results[0]]
 
-    events.append(_make_event(current_event))
+        for result in sorted_results[1:]:
+            prev_time = current_event[-1].timestamp_sec
+            if result.timestamp_sec - prev_time <= gap_sec:
+                current_event.append(result)
+            else:
+                events.append(_make_event(current_event))
+                current_event = [result]
 
-    # Sort events by their best score
-    events.sort(key=lambda e: e["best_score"], reverse=True)
-    return events
+        events.append(_make_event(current_event))
+        all_events.extend(events)
+
+    # Sort all events globally by best score
+    all_events.sort(key=lambda e: e["best_score"], reverse=True)
+    return all_events
 
 
 def _make_event(frames: list[SearchResult]) -> dict:
@@ -236,12 +248,21 @@ def list_cameras(client: Optional[VectorAIClient] = None) -> list[str]:
     camera_ids = set()
     offset = None
     while True:
-        results, next_offset = client.points.scroll(
+        scroll_response = client.points.scroll(
             COLLECTION_NAME,
             limit=100,
             offset=offset,
             with_payload=["camera_id"],
         )
+        # Handle both (list, offset) tuple and ScrollResult object
+        if isinstance(scroll_response, (list, tuple)) and len(scroll_response) == 2:
+            results, next_offset = scroll_response
+        elif hasattr(scroll_response, "points"):
+            results = scroll_response.points
+            next_offset = getattr(scroll_response, "next_page_offset", None)
+        else:
+            results = scroll_response
+            next_offset = None
         for point in results:
             camera_ids.add(point.payload.get("camera_id", "unknown"))
         if next_offset is None or not results:

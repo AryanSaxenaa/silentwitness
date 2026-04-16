@@ -43,8 +43,22 @@ def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/webm") ->
     """
     model = get_whisper_model()
 
-    # Write to temp file — Whisper needs a file path
-    suffix = ".webm" if "webm" in mime_type else ".wav"
+    # Map MIME type to a file extension Whisper/ffmpeg can handle
+    _MIME_TO_EXT = {
+        "audio/webm": ".webm",
+        "audio/ogg": ".ogg",
+        "audio/opus": ".ogg",
+        "audio/mp4": ".m4a",
+        "audio/m4a": ".m4a",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/flac": ".flac",
+    }
+    # Normalize: "audio/webm;codecs=opus" → "audio/webm"
+    mime_base = mime_type.split(";")[0].strip().lower()
+    suffix = _MIME_TO_EXT.get(mime_base, ".webm")  # default to webm if unknown
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(audio_bytes)
         tmp_path = tmp.name

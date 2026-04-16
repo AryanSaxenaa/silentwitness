@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Mic, MicOff, Loader2, Volume2 } from 'lucide-react'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_URL || ''
+import { voiceQuery } from '../api'
 
 export default function VoiceButton({ onResult, onTranscript, disabled }) {
   const [state, setState] = useState('idle') // idle | recording | processing | error
@@ -52,14 +50,8 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
   }
 
   const sendAudio = async (blob, mimeType) => {
-    const formData = new FormData()
-    formData.append('audio', blob, 'query.webm')
-
     try {
-      const { data } = await axios.post(`${API_BASE}/api/voice`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 30000,
-      })
+      const data = await voiceQuery(blob, mimeType)
       setTranscript(data.transcribed_query || '')
       if (onTranscript) onTranscript(data.transcribed_query)
       if (onResult) onResult(data)
@@ -87,48 +79,68 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
     }
   }, [])
 
+  // Derive button styles from design tokens
+  const btnStyle = (() => {
+    if (state === 'recording') return {
+      background: '#EF4444',
+      border: '1px solid #EF4444',
+      boxShadow: '0 0 16px rgba(239,68,68,0.35)',
+    }
+    if (state === 'processing') return {
+      background: 'rgba(245,158,11,0.15)',
+      border: '1px solid rgba(245,158,11,0.3)',
+    }
+    if (state === 'error') return {
+      background: 'rgba(239,68,68,0.12)',
+      border: '1px solid rgba(239,68,68,0.3)',
+    }
+    return {
+      background: 'var(--bg-subtle)',
+      border: '1px solid var(--border)',
+    }
+  })()
+
+  const labelColor = state === 'recording' ? '#FCA5A5'
+    : state === 'processing' ? '#FCD34D'
+    : state === 'error' ? '#FCA5A5'
+    : 'var(--text-muted)'
+
   return (
     <div className="flex flex-col items-center gap-1">
       <button
         onClick={handleClick}
         disabled={disabled || state === 'processing'}
         title={state === 'recording' ? 'Click to stop recording' : 'Click to speak your query'}
-        className={`
-          relative w-11 h-11 rounded-xl flex items-center justify-center
-          transition-all duration-200 active:scale-95 disabled:opacity-50
-          ${state === 'recording'
-            ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30 animate-pulse'
-            : state === 'processing'
-            ? 'bg-amber-500/20 border border-amber-500/30 cursor-wait'
-            : state === 'error'
-            ? 'bg-red-500/20 border border-red-500/30'
-            : 'bg-surface-600 hover:bg-surface-500 border border-white/10'
-          }
-        `}
+        className="relative flex items-center justify-center transition-all duration-200 active:scale-95 disabled:opacity-50"
+        style={{
+          width: '44px',
+          height: '44px',
+          borderRadius: '12px',
+          cursor: state === 'processing' ? 'wait' : 'pointer',
+          ...btnStyle,
+        }}
       >
         {state === 'processing' ? (
-          <Loader2 size={18} className="animate-spin text-amber-400" />
+          <Loader2 size={18} style={{ color: '#FCD34D' }} className="animate-spin" />
         ) : state === 'recording' ? (
-          <MicOff size={18} className="text-white" />
+          <MicOff size={18} style={{ color: 'white' }} />
         ) : state === 'error' ? (
-          <Mic size={18} className="text-red-400" />
+          <Mic size={18} style={{ color: '#FCA5A5' }} />
         ) : (
-          <Mic size={18} className="text-gray-300" />
+          <Mic size={18} style={{ color: 'var(--text-secondary)' }} />
         )}
 
         {/* Pulse ring when recording */}
         {state === 'recording' && (
-          <span className="absolute inset-0 rounded-xl bg-red-500/40 animate-ping" />
+          <span
+            className="absolute inset-0 animate-ping"
+            style={{ borderRadius: '12px', background: 'rgba(239,68,68,0.35)' }}
+          />
         )}
       </button>
 
       {/* State label */}
-      <span className={`text-[10px] leading-none ${
-        state === 'recording' ? 'text-red-400' :
-        state === 'processing' ? 'text-amber-400' :
-        state === 'error' ? 'text-red-400' :
-        'text-gray-600'
-      }`}>
+      <span style={{ fontSize: '10px', lineHeight: 1, color: labelColor }}>
         {state === 'recording' ? 'Recording...' :
          state === 'processing' ? 'Transcribing...' :
          state === 'error' ? (errorMsg || 'Error') :
@@ -137,7 +149,10 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
 
       {/* Transcript preview */}
       {transcript && state === 'idle' && (
-        <div className="flex items-center gap-1 text-[10px] text-brand-400 max-w-[120px] truncate">
+        <div
+          className="flex items-center gap-1 truncate"
+          style={{ fontSize: '10px', color: 'var(--accent)', maxWidth: '120px' }}
+        >
           <Volume2 size={9} />
           <span className="truncate">"{transcript}"</span>
         </div>

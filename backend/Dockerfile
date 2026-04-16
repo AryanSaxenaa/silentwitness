@@ -28,4 +28,6 @@ COPY . .
 
 RUN mkdir -p /app/footage /app/data/thumbnails
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Use --workers 1 to share the CLIP singleton across requests.
+# --reload is removed for production; add it manually for local dev if desired.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

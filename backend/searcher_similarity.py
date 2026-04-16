@@ -73,35 +73,25 @@ def search_similar(
     # Build filter
     db_filter = build_filter(filters) if filters else None
 
-    # If excluding same video, add that condition
-    if exclude_same_video and source_payload.get("video_file"):
-        video_file = source_payload["video_file"]
-        exclusion = Field("video_file").ne(video_file) if hasattr(Field("video_file"), "ne") else None
-        # Fall back: handled post-search if .ne() not supported in beta
-        raw_results = client.points.search(
-            COLLECTION_NAME,
-            vector=vector,
-            limit=limit * 3,  # over-fetch to allow filtering
-            query_filter=db_filter,
-            with_payload=True,
-        )
-        # Exclude source frame and optionally same video
-        raw_results = [
-            r for r in raw_results
-            if str(r.id) != frame_id and (
-                not exclude_same_video or r.payload.get("video_file") != video_file
-            )
-        ]
-    else:
-        raw_results = client.points.search(
-            COLLECTION_NAME,
-            vector=vector,
-            limit=limit + 1,  # +1 to account for self-match
-            query_filter=db_filter,
-            with_payload=True,
-        )
-        # Exclude the source frame itself
-        raw_results = [r for r in raw_results if str(r.id) != frame_id]
+    source_video = source_payload.get("video_file") if exclude_same_video else None
+
+    # Over-fetch to allow post-search filtering (self + same-video exclusions).
+    # .ne() is not reliably in the beta SDK, so we always filter in Python.
+    fetch_limit = limit * 3 if exclude_same_video else limit + 1
+    raw_results = client.points.search(
+        COLLECTION_NAME,
+        vector=vector,
+        limit=fetch_limit,
+        query_filter=db_filter,
+        with_payload=True,
+    )
+
+    # Exclude self and (optionally) same video
+    raw_results = [
+        r for r in raw_results
+        if str(r.id) != frame_id
+        and (source_video is None or r.payload.get("video_file") != source_video)
+    ]
 
     raw_results = raw_results[:limit]
 

@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"VectorAI DB not available at startup: {e}. Will retry on first request.")
 
     # Warm up CLIP and Whisper in background so first use is instant
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.run_in_executor(None, get_clip_model)
     loop.run_in_executor(None, get_whisper_model)
 
@@ -191,7 +191,8 @@ async def upload_and_index(
         content = await file.read()
         f.write(content)
 
-    job_id = f"{file.filename}_{id(content)}"
+    import uuid as _uuid
+    job_id = f"{Path(file.filename).stem}_{_uuid.uuid4().hex[:8]}"
     background_tasks.add_task(_run_index_job, job_id, save_path, camera_id, fps_sample)
 
     return {"job_id": job_id, "status": "queued", "video": file.filename}
@@ -334,13 +335,22 @@ def get_timeline(
 
         offset = None
         while True:
-            results, next_offset = client.points.scroll(
+            scroll_response = client.points.scroll(
                 COLLECTION_NAME,
                 limit=200,
                 offset=offset,
                 query_filter=db_filter,
                 with_payload=["absolute_time", "motion_score", "camera_id", "thumbnail_path", "timestamp_sec"],
             )
+            # SDK may return (results, next_offset) tuple OR a ScrollResult object
+            if isinstance(scroll_response, (list, tuple)) and len(scroll_response) == 2:
+                results, next_offset = scroll_response
+            elif hasattr(scroll_response, "points"):
+                results = scroll_response.points
+                next_offset = getattr(scroll_response, "next_page_offset", None)
+            else:
+                results = scroll_response
+                next_offset = None
             for point in results:
                 p = point.payload
                 abs_time = p.get("absolute_time", "")
@@ -411,7 +421,7 @@ def live_start(req: LiveStartRequest):
 
 
 @app.post("/api/live/stop")
-def live_stop(camera_id: str = "live"):
+def live_stop(camera_id: str = Query(default="live", description="Camera ID to stop")):
     """Stop a running live feed indexer."""
     return stop_live_feed(camera_id)
 
