@@ -4,25 +4,36 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#f0f4ff',
-          100: '#e0e9ff',
-          500: '#3b63f7',
-          600: '#2d52e8',
-          700: '#2241cc',
-          900: '#111d5e',
-        },
-        surface: {
-          900: '#0a0c14',
-          800: '#10131f',
-          700: '#171b2d',
-          600: '#1e2438',
-          500: '#252b44',
-        },
+        base:    '#080C14',
+        card:    '#0D1220',
+        subtle:  '#141A2A',
+        border:  '#1E2A40',
+        accent:  '#3B82F6',
+        primary: '#F0F4FF',
+        secondary:'#8B96B0',
+        muted:   '#4A5568',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+      },
+      fontSize: {
+        '2xs': ['10px', '14px'],
+      },
+      borderRadius: {
+        sm: '6px',
+        DEFAULT: '8px',
+        lg: '12px',
+        xl: '16px',
+        '2xl': '20px',
+      },
+      boxShadow: {
+        'accent-sm': '0 0 0 3px rgba(59,130,246,0.25)',
+        'card': '0 1px 3px rgba(0,0,0,0.4)',
+      },
+      animation: {
+        'fade-up': 'fadeUp 400ms ease both',
+        'pulse-dot': 'pulse-dot 1.5s ease infinite',
       },
     },
   },

@@ -1,95 +1,191 @@
 import { useState } from 'react'
-import { Clock, Camera, Activity, ChevronDown, ChevronUp, Play, Layers, ScanSearch } from 'lucide-react'
+import { Clock, Camera, ChevronDown, ChevronUp, Play, ScanSearch, Layers, Activity } from 'lucide-react'
 import { thumbnailUrl } from '../api'
 
-function formatTime(isoStr) {
+function fmt(isoStr) {
   if (!isoStr) return '--'
-  try {
-    return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return isoStr
-  }
+  try { return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
+  catch { return isoStr }
 }
 
-function formatDuration(sec) {
-  if (sec < 60) return `${sec}s`
-  return `${Math.floor(sec / 60)}m ${sec % 60}s`
-}
-
-function ScoreBadge({ score }) {
+function ScorePill({ score }) {
   const pct = Math.round(score * 100)
-  const color = pct >= 80 ? 'text-emerald-400 bg-emerald-400/10' :
-                pct >= 60 ? 'text-amber-400 bg-amber-400/10' :
-                            'text-gray-400 bg-gray-400/10'
+  const color = pct >= 75 ? 'badge-green' : pct >= 50 ? 'badge-amber' : 'badge-gray'
+  return <span className={`badge ${color} font-mono`}>{pct}%</span>
+}
+
+/* ── Bento event card ── */
+function EventCard({ event, onFrameClick, onSimilar }) {
+  const [expanded, setExpanded] = useState(false)
+  const best = event.frames?.[0]
+  const thumb = thumbnailUrl(event.thumbnail_path)
+  const durationLabel = event.duration_sec < 60
+    ? `${event.duration_sec}s`
+    : `${Math.floor(event.duration_sec / 60)}m ${event.duration_sec % 60}s`
+
   return (
-    <span className={`badge ${color} font-mono`}>
-      {pct}% match
-    </span>
+    <div
+      className="card-accent animate-fade-up"
+      style={{ borderRadius: '14px', overflow: 'hidden' }}
+    >
+      <div className="flex gap-0" style={{ minHeight: '140px' }}>
+
+        {/* Thumbnail — fixed left column */}
+        <div
+          className="relative flex-shrink-0 cursor-pointer group"
+          style={{ width: '200px' }}
+          onClick={() => best && onFrameClick({ ...best, camera_id: event.camera_id, video_file: event.video_file })}
+        >
+          {thumb
+            ? <img src={thumb} alt="" className="w-full h-full object-cover" style={{ display: 'block' }} loading="lazy" />
+            : <div className="w-full h-full flex items-center justify-center" style={{ background: 'var(--bg-subtle)' }}>
+                <Camera size={28} style={{ color: 'var(--text-muted)' }} />
+              </div>
+          }
+          {/* Play overlay */}
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(0,0,0,0.45)' }}>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.9)' }}>
+              <Play size={16} style={{ color: '#080C14', marginLeft: '2px' }} fill="#080C14" />
+            </div>
+          </div>
+          {/* Score badge */}
+          <div className="absolute top-2 left-2">
+            <ScorePill score={event.best_score} />
+          </div>
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
+          <div>
+            {/* Camera + time */}
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <Camera size={12} style={{ color: 'var(--accent)' }} />
+                <span className="font-mono text-xs font-medium" style={{ color: 'var(--accent)' }}>
+                  {event.camera_id}
+                </span>
+              </div>
+              <span className="badge badge-gray font-mono">
+                <Layers size={9} /> {event.frame_count} frames
+              </span>
+              <span className="badge badge-gray font-mono">{durationLabel}</span>
+            </div>
+
+            {/* Timestamps */}
+            <div className="flex items-center gap-1.5 mb-3" style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+              <Clock size={12} />
+              <span>{fmt(event.start_time)}</span>
+              <span style={{ color: 'var(--text-muted)' }}>→</span>
+              <span>{fmt(event.end_time)}</span>
+            </div>
+
+            {/* Video filename */}
+            <div className="font-mono truncate" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+              {event.video_file}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-3 mt-3">
+            {onSimilar && best && (
+              <button
+                onClick={() => onSimilar(best.frame_id)}
+                className="btn-ghost"
+                style={{ padding: '5px 12px', fontSize: '12px' }}
+              >
+                <ScanSearch size={12} /> Find similar
+              </button>
+            )}
+            {event.frame_count > 1 && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="btn-ghost"
+                style={{ padding: '5px 12px', fontSize: '12px' }}
+              >
+                {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {expanded ? 'Collapse' : `All ${event.frame_count} frames`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded frame strip */}
+      {expanded && (
+        <div
+          className="grid gap-1.5 p-3 animate-fade-up"
+          style={{
+            gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-subtle)',
+          }}
+        >
+          {event.frames.map((f) => (
+            <div
+              key={f.frame_id}
+              onClick={() => onFrameClick({ ...f, camera_id: event.camera_id, video_file: event.video_file })}
+              className="relative cursor-pointer group"
+              style={{ aspectRatio: '16/9', borderRadius: '6px', overflow: 'hidden', background: 'var(--bg-card)' }}
+            >
+              {thumbnailUrl(f.thumbnail_path)
+                ? <img src={thumbnailUrl(f.thumbnail_path)} className="w-full h-full object-cover" loading="lazy" alt="" />
+                : <div className="w-full h-full flex items-center justify-center"><Camera size={12} style={{ color: 'var(--text-muted)' }} /></div>
+              }
+              <div
+                className="absolute bottom-0 inset-x-0 text-center font-mono"
+                style={{ background: 'rgba(0,0,0,0.7)', fontSize: '9px', padding: '2px 0', color: '#93C5FD' }}
+              >
+                {Math.round(f.score * 100)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
-function MotionBadge({ score }) {
-  const pct = Math.round(score * 100)
-  return (
-    <span className="badge bg-surface-600 text-gray-400 font-mono">
-      <Activity size={9} />
-      {pct}% motion
-    </span>
-  )
-}
-
+/* ── Bento frame card (grid view) ── */
 function FrameCard({ frame, onClick, onSimilar }) {
   const thumb = thumbnailUrl(frame.thumbnail_path)
 
   return (
     <div
-      className="card hover:scale-[1.02] hover:border-brand-500/30 group relative overflow-hidden"
+      className="card group cursor-pointer animate-fade-up"
+      style={{ borderRadius: '12px', overflow: 'hidden' }}
+      onClick={() => onClick(frame)}
     >
       {/* Thumbnail */}
-      <div className="aspect-video bg-surface-700 rounded-lg overflow-hidden mb-3 relative">
-        {thumb ? (
-          <img
-            src={thumb}
-            alt={`Frame at ${frame.timestamp_sec}s`}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-600">
-            <Camera size={32} />
-          </div>
-        )}
-        {/* Play overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
-          <Play size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="white" />
+      <div className="relative" style={{ aspectRatio: '16/9', background: 'var(--bg-subtle)' }}>
+        {thumb
+          ? <img src={thumb} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" alt="" />
+          : <div className="w-full h-full flex items-center justify-center"><Camera size={24} style={{ color: 'var(--text-muted)' }} /></div>
+        }
+        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <Play size={20} fill="white" style={{ color: 'white' }} />
         </div>
-        {/* Score badge overlay */}
-        <div className="absolute top-2 right-2">
-          <ScoreBadge score={frame.score} />
-        </div>
+        <div className="absolute top-2 left-2"><ScorePill score={frame.score} /></div>
       </div>
 
-      {/* Metadata */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer" onClick={() => onClick(frame)}>
-            <Camera size={11} />
-            <span>{frame.camera_id}</span>
-          </div>
-          <MotionBadge score={frame.motion_score} />
+      {/* Meta */}
+      <div className="p-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="font-mono text-xs font-medium" style={{ color: 'var(--accent)' }}>{frame.camera_id}</span>
+          <span className="badge badge-gray font-mono" style={{ fontSize: '10px' }}>
+            <Activity size={9} /> {Math.round(frame.motion_score * 100)}%
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
+        <div className="flex items-center gap-1.5 mb-2" style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
           <Clock size={11} />
-          <span>{formatTime(frame.absolute_time)}</span>
-          <span className="text-gray-600">·</span>
-          <span className="font-mono">{frame.timestamp_sec}s</span>
+          <span>{fmt(frame.absolute_time)}</span>
         </div>
         {onSimilar && (
           <button
             onClick={(e) => { e.stopPropagation(); onSimilar(frame.frame_id) }}
-            className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-brand-400 transition-colors mt-1"
+            className="btn-ghost w-full justify-center"
+            style={{ padding: '5px 0', fontSize: '11px' }}
           >
-            <ScanSearch size={10} /> Find similar moments
+            <ScanSearch size={11} /> Find similar
           </button>
         )}
       </div>
@@ -97,112 +193,25 @@ function FrameCard({ frame, onClick, onSimilar }) {
   )
 }
 
-function EventCard({ event, onFrameClick, onSimilar }) {
-  const [expanded, setExpanded] = useState(false)
-  const bestFrame = event.frames?.[0]
-  const thumb = thumbnailUrl(event.thumbnail_path)
-
+/* ── Stats strip (supermemory style) ── */
+function StatsStrip({ totalResults, totalEvents, query }) {
   return (
-    <div className="card border border-white/5 hover:border-brand-500/20 transition-all">
-      {/* Event header */}
-      <div className="flex gap-4">
-        {/* Best thumbnail */}
-        <div
-          className="w-40 flex-shrink-0 aspect-video bg-surface-700 rounded-lg overflow-hidden cursor-pointer relative group"
-          onClick={() => bestFrame && onFrameClick(bestFrame)}
-        >
-          {thumb ? (
-            <img src={thumb} alt="Event thumbnail" className="w-full h-full object-cover" loading="lazy" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-600">
-              <Camera size={24} />
-            </div>
-          )}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center">
-            <Play size={18} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="white" />
-          </div>
-        </div>
-
-        {/* Event info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <ScoreBadge score={event.best_score} />
-              <span className="badge bg-surface-600 text-gray-400">
-                <Layers size={9} />
-                {event.frame_count} frames
-              </span>
-              <span className="badge bg-surface-600 text-gray-400">
-                {formatDuration(event.duration_sec)}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-sm text-gray-300">
-              <Camera size={13} className="text-gray-500" />
-              <span>{event.camera_id}</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-              <Clock size={11} />
-              <span>{formatTime(event.start_time)}</span>
-              <span>→</span>
-              <span>{formatTime(event.end_time)}</span>
-            </div>
-            <div className="text-xs text-gray-600 font-mono">{event.video_file}</div>
-            {onSimilar && event.frames?.[0] && (
-              <button
-                onClick={() => onSimilar(event.frames[0].frame_id)}
-                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-brand-400 transition-colors mt-1"
-              >
-                <ScanSearch size={10} /> Find similar moments
-              </button>
-            )}
-          </div>
-        </div>
+    <div className="flex items-center gap-8 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
+      <div>
+        <div className="stat-number">{totalResults}</div>
+        <div className="section-label mt-1">frames matched</div>
       </div>
-
-      {/* Expand frames */}
-      {event.frame_count > 1 && (
-        <>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-gray-500
-                       hover:text-gray-300 transition-colors py-1.5 border-t border-white/5"
-          >
-            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            {expanded ? 'Hide' : 'Show'} all {event.frame_count} frames
-          </button>
-
-          {expanded && (
-            <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {event.frames.map((frame) => (
-                <div
-                  key={frame.frame_id}
-                  onClick={() => onFrameClick(frame)}
-                  className="aspect-video bg-surface-700 rounded overflow-hidden cursor-pointer
-                             hover:ring-1 hover:ring-brand-500/50 relative group"
-                >
-                  {thumbnailUrl(frame.thumbnail_path) ? (
-                    <img
-                      src={thumbnailUrl(frame.thumbnail_path)}
-                      alt={`${frame.timestamp_sec}s`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-700">
-                      <Camera size={12} />
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 inset-x-0 bg-black/70 text-center text-[10px] text-gray-300 py-0.5">
-                    {Math.round(frame.score * 100)}%
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+      {totalEvents > 0 && (
+        <div>
+          <div className="stat-number">{totalEvents}</div>
+          <div className="section-label mt-1">events detected</div>
+        </div>
+      )}
+      {query && (
+        <div className="ml-auto">
+          <div className="font-mono text-sm" style={{ color: 'var(--accent)' }}>"{query}"</div>
+          <div className="section-label mt-1">search query</div>
+        </div>
       )}
     </div>
   )
@@ -210,59 +219,56 @@ function EventCard({ event, onFrameClick, onSimilar }) {
 
 export default function ResultsGrid({ results, viewMode = 'events', onFrameSelect, onSimilaritySearch }) {
   if (!results) return null
-
   const { total_results, total_events, events, frames, query } = results
 
   if (total_results === 0) {
     return (
-      <div className="text-center py-16 text-gray-500">
-        <Camera size={40} className="mx-auto mb-3 opacity-30" />
-        <p className="text-lg font-medium text-gray-400">No results found</p>
-        <p className="text-sm mt-1">Try a different description or broaden your filters</p>
+      <div className="text-center py-20 animate-fade-up">
+        <div
+          className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+          style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}
+        >
+          <Camera size={24} style={{ color: 'var(--text-muted)' }} />
+        </div>
+        <p className="subheadline mb-2" style={{ fontSize: '20px' }}>No results found</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+          Try a different description or broaden your filters
+        </p>
       </div>
     )
   }
 
   return (
-    <div>
-      {/* Summary */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-sm text-gray-400">
-          Found <span className="text-white font-medium">{total_results}</span> frames
-          {total_events > 0 && (
-            <> grouped into <span className="text-white font-medium">{total_events}</span> events</>
-          )}
-          {query && <> for <span className="text-brand-500">"{query}"</span></>}
-        </div>
+    <div className="animate-fade-up">
+      <StatsStrip totalResults={total_results} totalEvents={total_events} query={query} />
+
+      <div className="mt-5">
+        {viewMode === 'events' && events?.length > 0 && (
+          <div className="flex flex-col gap-3 stagger">
+            {events.map((event) => (
+              <EventCard
+                key={event.event_id}
+                event={event}
+                onFrameClick={onFrameSelect}
+                onSimilar={onSimilaritySearch}
+              />
+            ))}
+          </div>
+        )}
+
+        {viewMode === 'frames' && frames?.length > 0 && (
+          <div className="grid gap-3 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+            {frames.map((frame) => (
+              <FrameCard
+                key={frame.frame_id}
+                frame={frame}
+                onClick={onFrameSelect}
+                onSimilar={onSimilaritySearch}
+              />
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Events view */}
-      {viewMode === 'events' && events?.length > 0 && (
-        <div className="space-y-3">
-          {events.map((event) => (
-            <EventCard
-              key={event.event_id}
-              event={event}
-              onFrameClick={onFrameSelect}
-              onSimilar={onSimilaritySearch}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Frames grid view */}
-      {viewMode === 'frames' && frames?.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
-          {frames.map((frame) => (
-            <FrameCard
-              key={frame.frame_id}
-              frame={frame}
-              onClick={onFrameSelect}
-              onSimilar={onSimilaritySearch}
-            />
-          ))}
-        </div>
-      )}
     </div>
   )
 }

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Database, Wifi, WifiOff, Camera } from 'lucide-react'
 import { getStatus } from '../api'
 
 export default function StatusBar() {
@@ -12,39 +11,34 @@ export default function StatusBar() {
     return () => clearInterval(interval)
   }, [])
 
-  if (!status) return null
+  const frames = status?.stats?.total_frames ?? 0
+  const cameras = status?.cameras ?? []
+  const connected = status?.db_connected ?? false
 
   return (
-    <div className="flex items-center gap-4 text-xs text-gray-400">
-      {/* DB connection */}
-      <div className="flex items-center gap-1.5">
-        <Database size={12} className={status.db_connected ? 'text-emerald-400' : 'text-red-400'} />
-        <span className={status.db_connected ? 'text-emerald-400' : 'text-red-400'}>
-          {status.db_connected ? 'VectorAI DB connected' : 'DB offline'}
+    <div className="flex items-center gap-6 font-mono text-[11px] tracking-wide uppercase text-muted">
+      {/* DB status */}
+      <div className="flex items-center gap-2">
+        <span
+          className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse-dot' : 'bg-red-500'}`}
+        />
+        <span className={connected ? 'text-emerald-400' : 'text-red-400'}>
+          {connected ? 'VectorAI DB' : 'DB offline'}
         </span>
       </div>
 
-      {/* Frame count */}
-      {status.db_connected && status.stats && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-gray-500">|</span>
-          <span>{status.stats.total_frames?.toLocaleString() ?? 0} frames indexed</span>
-        </div>
+      {frames > 0 && (
+        <span className="text-muted">{frames.toLocaleString()} frames indexed</span>
       )}
 
-      {/* Cameras */}
-      {status.cameras?.length > 0 && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-gray-500">|</span>
-          <Camera size={12} />
-          <span>{status.cameras.join(', ')}</span>
-        </div>
+      {cameras.length > 0 && (
+        <span className="text-muted">{cameras.join(' · ')}</span>
       )}
 
-      {/* Offline badge */}
-      <div className="flex items-center gap-1.5 ml-auto">
-        <WifiOff size={12} className="text-amber-400" />
-        <span className="text-amber-400 font-medium">100% offline — no data leaves this machine</span>
+      {/* Privacy guarantee — supermemory stats-strip style */}
+      <div className="ml-auto flex items-center gap-1.5 text-secondary">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+        <span>100% offline — no data leaves this machine</span>
       </div>
     </div>
   )

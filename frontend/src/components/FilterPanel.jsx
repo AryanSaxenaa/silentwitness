@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react'
+import { SlidersHorizontal, X, ChevronDown } from 'lucide-react'
 import { getCameras } from '../api'
 
 export default function FilterPanel({ filters, onChange }) {
@@ -10,117 +10,136 @@ export default function FilterPanel({ filters, onChange }) {
     getCameras().then((d) => setCameras(d.cameras || [])).catch(() => {})
   }, [])
 
-  const activeCount = Object.values(filters).filter((v) => v !== null && v !== '' && v !== undefined).length
+  const update = (key, value) => onChange({ ...filters, [key]: value || null })
 
-  const update = (key, value) => {
-    onChange({ ...filters, [key]: value || null })
-  }
+  const activeFilters = Object.entries(filters).filter(([, v]) => v !== null && v !== '' && v !== undefined)
+  const activeCount = activeFilters.length
+
+  const clearAll = () => onChange({ cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null })
 
   return (
-    <div className="glass rounded-xl overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-300
-                   hover:text-white transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <SlidersHorizontal size={15} />
-          <span className="font-medium">Filters</span>
+    <div>
+      {/* Trigger row — pill-style */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setOpen(!open)}
+          className="btn-ghost"
+          style={open ? { color: 'var(--accent)', borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}
+        >
+          <SlidersHorizontal size={13} />
+          Filters
           {activeCount > 0 && (
-            <span className="badge bg-brand-500/20 text-brand-500">
-              {activeCount} active
+            <span className="badge badge-blue" style={{ padding: '1px 6px', fontSize: '10px' }}>
+              {activeCount}
             </span>
           )}
-        </div>
-        {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-      </button>
+          <ChevronDown
+            size={13}
+            style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
+          />
+        </button>
 
+        {/* Active filter pills */}
+        {activeFilters.map(([key, val]) => (
+          <span
+            key={key}
+            className="badge badge-blue flex items-center gap-1.5"
+            style={{ padding: '4px 10px' }}
+          >
+            <span className="font-mono text-[10px] uppercase tracking-wider opacity-60">{key}</span>
+            <span>{String(val)}</span>
+            <button onClick={() => update(key, null)} className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity">
+              <X size={10} />
+            </button>
+          </span>
+        ))}
+
+        {activeCount > 1 && (
+          <button onClick={clearAll} className="text-xs transition-colors" style={{ color: 'var(--text-muted)' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      {/* Expanded filter panel */}
       {open && (
-        <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-white/5 pt-4">
+        <div
+          className="mt-3 p-4 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-up"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+        >
           {/* Camera */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1.5">Camera</label>
+            <label className="section-label block mb-2">Camera</label>
             <select
               value={filters.cameraId || ''}
               onChange={(e) => update('cameraId', e.target.value)}
-              className="input-field text-sm py-2"
+              className="input-field"
+              style={{ fontSize: '13px' }}
             >
               <option value="">All cameras</option>
-              {cameras.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {cameras.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
           {/* Date */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1.5">Date</label>
+            <label className="section-label block mb-2">Date</label>
             <input
               type="date"
               value={filters.date || ''}
               onChange={(e) => update('date', e.target.value)}
-              className="input-field text-sm py-2"
+              className="input-field"
+              style={{ fontSize: '13px', colorScheme: 'dark' }}
             />
           </div>
 
-          {/* Time range */}
+          {/* Hour from */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1.5">From hour</label>
+            <label className="section-label block mb-2">From hour</label>
             <input
-              type="number"
-              min={0}
-              max={23}
-              placeholder="0"
+              type="number" min={0} max={23} placeholder="0"
               value={filters.hourStart ?? ''}
               onChange={(e) => update('hourStart', e.target.value ? parseInt(e.target.value) : null)}
-              className="input-field text-sm py-2"
+              className="input-field"
+              style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
             />
           </div>
 
+          {/* Hour to */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1.5">To hour</label>
+            <label className="section-label block mb-2">To hour</label>
             <input
-              type="number"
-              min={0}
-              max={23}
-              placeholder="23"
+              type="number" min={0} max={23} placeholder="23"
               value={filters.hourEnd ?? ''}
               onChange={(e) => update('hourEnd', e.target.value ? parseInt(e.target.value) : null)}
-              className="input-field text-sm py-2"
+              className="input-field"
+              style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
             />
           </div>
 
           {/* Motion score */}
           <div className="col-span-2 md:col-span-4">
-            <label className="block text-xs text-gray-500 mb-1.5">
-              Minimum motion activity: {filters.minMotionScore ? `${Math.round(filters.minMotionScore * 100)}%` : 'any'}
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="section-label">Min motion</label>
+              <span className="font-mono text-xs" style={{ color: 'var(--accent)' }}>
+                {filters.minMotionScore ? `${Math.round(filters.minMotionScore * 100)}%` : 'Any'}
+              </span>
+            </div>
             <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
+              type="range" min={0} max={1} step={0.01}
               value={filters.minMotionScore ?? 0}
               onChange={(e) => update('minMotionScore', parseFloat(e.target.value) || null)}
-              className="w-full accent-brand-500"
+              className="w-full h-1 rounded-full appearance-none cursor-pointer"
+              style={{ accentColor: 'var(--accent)' }}
             />
-            <div className="flex justify-between text-xs text-gray-600 mt-0.5">
-              <span>Any activity</span>
-              <span>High motion only</span>
+            <div className="flex justify-between mt-1" style={{ color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'var(--mono)' }}>
+              <span>any activity</span>
+              <span>high motion only</span>
             </div>
           </div>
-
-          {/* Reset */}
-          {activeCount > 0 && (
-            <div className="col-span-2 md:col-span-4">
-              <button
-                onClick={() => onChange({ cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null })}
-                className="text-xs text-gray-500 hover:text-red-400 transition-colors"
-              >
-                Clear all filters
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
