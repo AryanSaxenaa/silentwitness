@@ -430,6 +430,12 @@
     display: inline-flex;
   }
 
+  .tooltip--block {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
   .tooltip__bubble {
     position: absolute;
     left: 50%;
@@ -482,6 +488,7 @@
     gap: 12px;
     align-items: center;
     min-width: 0;
+    width: 100%;
   }
 
   .dashboard-grid {

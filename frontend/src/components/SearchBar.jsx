@@ -48,7 +48,10 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
                   className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
                   style={{ color: 'var(--accent)' }}
                 />
-                <Tooltip content="Enter a natural-language query such as person entering store or person near shelves">
+                <Tooltip
+                  content="Enter a natural-language query such as person entering store or person near shelves"
+                  className="tooltip--block"
+                >
                   <input
                     ref={inputRef}
                     type="text"
@@ -57,6 +60,7 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
                     placeholder="Describe what you're looking for in plain English..."
                     className="input-field"
                     style={{
+                      width: '100%',
                       paddingLeft: '46px',
                       paddingRight: query ? '46px' : '18px',
                       paddingTop: '20px',
