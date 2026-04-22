@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Radio, Square, Loader2, Circle } from 'lucide-react'
 import { startLiveFeed, stopLiveFeed, getLiveStatus } from '../api'
+import Tooltip from './Tooltip'
 
 export default function LiveFeedPanel() {
   const [status, setStatus] = useState({})
@@ -39,6 +40,10 @@ export default function LiveFeedPanel() {
 
   return (
     <div className="space-y-4">
+      <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5', overflowWrap: 'anywhere' }}>
+        Live capture is optional. Use it only if you want to index a webcam or RTSP source in real time.
+      </p>
+
       {/* Active feeds */}
       {activeFeeds.map(([camId, s]) => (
         <div
@@ -60,16 +65,18 @@ export default function LiveFeedPanel() {
                 {s.camera_id}
               </span>
             </div>
-            <button
-              onClick={() => handleStop(camId)}
-              className="flex items-center gap-1 text-xs transition-colors"
-              style={{ color: '#FCA5A5' }}
-              onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
-              onMouseLeave={e => e.currentTarget.style.color = '#FCA5A5'}
-            >
-              <Square size={11} />
-              Stop
-            </button>
+            <Tooltip content={`Stop live capture for ${camId}`}>
+              <button
+                onClick={() => handleStop(camId)}
+                className="flex items-center gap-1 text-xs transition-colors"
+                style={{ color: '#FCA5A5' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+                onMouseLeave={e => e.currentTarget.style.color = '#FCA5A5'}
+              >
+                <Square size={11} />
+                Stop
+              </button>
+            </Tooltip>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center" style={{ fontSize: '12px' }}>
             <div>
@@ -106,12 +113,12 @@ export default function LiveFeedPanel() {
               className="input-field"
               style={{ fontSize: '13px' }}
             />
-            <p className="section-label mt-1" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '10px' }}>
+            <p className="section-label mt-1" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '10px', overflowWrap: 'anywhere' }}>
               0 = built-in webcam · 1 = external USB · rtsp://... = IP camera
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="section-label block mb-2">Camera ID</label>
               <input
@@ -138,20 +145,22 @@ export default function LiveFeedPanel() {
             </div>
           </div>
 
-          <button
-            onClick={handleStart}
-            disabled={starting}
-            className="btn-primary w-full justify-center"
-            style={{ fontSize: '13px' }}
-          >
-            {starting ? (
-              <><Loader2 size={14} className="animate-spin" /> Starting...</>
-            ) : (
-              <><Radio size={14} /> Start live indexing</>
-            )}
-          </button>
+          <Tooltip content="Start indexing frames from the selected live source">
+            <button
+              onClick={handleStart}
+              disabled={starting}
+              className="btn-primary w-full justify-center"
+              style={{ fontSize: '13px' }}
+            >
+              {starting ? (
+                <><Loader2 size={14} className="animate-spin" /> Starting...</>
+              ) : (
+                <><Radio size={14} /> Start live indexing</>
+              )}
+            </button>
+          </Tooltip>
 
-          <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5' }}>
+          <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5', overflowWrap: 'anywhere' }}>
             Motion-gated — only frames with activity are indexed. New frames are searchable within seconds of capture.
           </p>
         </div>

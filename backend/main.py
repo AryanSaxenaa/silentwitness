@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config import COLLECTION_NAME, FOOTAGE_DIR, THUMBNAILS_DIR
-from db import close_client, collection_stats, ensure_collection, get_client
+from db import close_client, collection_stats, ensure_collection, get_client, recreate_collection
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -29,6 +29,16 @@ logger = logging.getLogger(__name__)
 
 # Track background indexing jobs
 indexing_jobs: dict[str, dict] = {}
+runtime_health: dict[str, Any] = {
+    "retrieval_sanity": {
+        "checked_at": None,
+        "ok": None,
+        "reason": "not_checked",
+        "sample_frame_id": None,
+        "similar_results": 0,
+    },
+    "last_index_job": None,
+}
 
 
 def _parse_scroll_response(scroll_response: Any) -> tuple[list[Any], Any]:
@@ -69,6 +79,55 @@ def _startup_db() -> None:
     ensure_collection(client)
 
 
+def _run_retrieval_sanity_check() -> dict[str, Any]:
+    """
+    Verify the indexed collection can retrieve neighbors for a stored frame.
+    This catches broken collection/index states where points exist but search returns no hits.
+    """
+    from datetime import datetime
+
+    result = {
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+        "ok": None,
+        "reason": "not_checked",
+        "sample_frame_id": None,
+        "similar_results": 0,
+    }
+
+    try:
+        client = get_client()
+        stats = collection_stats(client)
+        total_frames = int(stats.get("total_frames", 0) or 0)
+        if total_frames < 2:
+            result["ok"] = True
+            result["reason"] = "not_enough_frames_for_neighbor_check"
+            return result
+
+        scroll_response = client.points.scroll(
+            COLLECTION_NAME,
+            limit=1,
+            with_payload=True,
+        )
+        points, _ = _parse_scroll_response(scroll_response)
+        if not points:
+            result["ok"] = False
+            result["reason"] = "collection_has_no_scrollable_points"
+            return result
+
+        frame_id = str(getattr(points[0], "id", ""))
+        result["sample_frame_id"] = frame_id
+        similar = search_similar(frame_id=frame_id, limit=3)
+        similar_results = int(similar.get("total_results", 0) or 0)
+        result["similar_results"] = similar_results
+        result["ok"] = similar_results > 0
+        result["reason"] = "ok" if similar_results > 0 else "similarity_search_returned_zero_results"
+        return result
+    except Exception as exc:
+        result["ok"] = False
+        result["reason"] = f"sanity_check_failed: {exc}"
+        return result
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: warm up models and ensure DB collection exists."""
@@ -88,6 +147,7 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, get_clip_model)
     loop.run_in_executor(None, get_whisper_model)
+    runtime_health["retrieval_sanity"] = await asyncio.to_thread(_run_retrieval_sanity_check)
 
     yield
     await asyncio.to_thread(close_client)
@@ -132,9 +192,10 @@ def status():
             "db_connected": True,
             "stats": stats,
             "cameras": cameras,
+            "runtime_health": runtime_health,
         }
     except Exception as e:
-        return {"db_connected": False, "error": str(e)}
+        return {"db_connected": False, "error": str(e), "runtime_health": runtime_health}
 
 
 # ─── Search ──────────────────────────────────────────────────────────────────
@@ -204,8 +265,20 @@ def _run_index_job(
     try:
         result = index_video(video_path, camera_id=camera_id, fps_sample=fps_sample)
         indexing_jobs[job_id] = {"status": "done", **result}
+        runtime_health["last_index_job"] = {
+            "job_id": job_id,
+            "status": "done",
+            **result,
+        }
+        runtime_health["retrieval_sanity"] = _run_retrieval_sanity_check()
     except Exception as e:
         indexing_jobs[job_id] = {"status": "error", "error": str(e)}
+        runtime_health["last_index_job"] = {
+            "job_id": job_id,
+            "status": "error",
+            "video": os.path.basename(video_path),
+            "error": str(e),
+        }
 
 
 @app.post("/api/index/upload")
@@ -276,6 +349,38 @@ def scan_and_index_all(background_tasks: BackgroundTasks, fps_sample: float = 1.
 @app.get("/api/index/jobs")
 def get_indexing_jobs():
     return indexing_jobs
+
+
+@app.post("/api/index/rebuild")
+def rebuild_index(background_tasks: BackgroundTasks, fps_sample: float = 1.0):
+    supported = {".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts"}
+    videos = [f for f in os.listdir(FOOTAGE_DIR) if Path(f).suffix.lower() in supported]
+    if not videos:
+        return {
+            "message": "No video files found in footage directory.",
+            "footage_dir": FOOTAGE_DIR,
+        }
+
+    client = get_client()
+    recreate_collection(client)
+    indexing_jobs.clear()
+    runtime_health["retrieval_sanity"] = {
+        "checked_at": None,
+        "ok": None,
+        "reason": "rebuild_in_progress",
+        "sample_frame_id": None,
+        "similar_results": 0,
+    }
+
+    job_ids = []
+    for fname in videos:
+        job_id = f"rebuild_{Path(fname).stem}_{uuid.uuid4().hex[:8]}"
+        path = os.path.join(FOOTAGE_DIR, fname)
+        background_tasks.add_task(_run_index_job, job_id, path, None, fps_sample)
+        job_ids.append(job_id)
+        indexing_jobs[job_id] = {"status": "queued", "video": fname}
+
+    return {"queued": len(job_ids), "job_ids": job_ids, "collection": COLLECTION_NAME}
 
 
 @app.get("/api/index/jobs/{job_id}")

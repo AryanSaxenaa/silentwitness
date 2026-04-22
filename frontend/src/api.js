@@ -52,6 +52,11 @@ export async function scanAndIndex(fpsSample = 1.0) {
   return data
 }
 
+export async function rebuildIndex(fpsSample = 1.0) {
+  const { data } = await api.post(`/api/index/rebuild?fps_sample=${fpsSample}`)
+  return data
+}
+
 export async function getIndexingJobs() {
   const { data } = await api.get('/api/index/jobs')
   return data

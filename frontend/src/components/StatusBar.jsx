@@ -14,29 +14,52 @@ export default function StatusBar() {
   const frames = status?.stats?.total_frames ?? 0
   const cameras = status?.cameras ?? []
   const connected = status?.db_connected ?? false
+  const retrievalSanity = status?.runtime_health?.retrieval_sanity
+  const lastJob = status?.runtime_health?.last_index_job
+  const sanityOk = retrievalSanity?.ok
 
   return (
-    <div className="flex items-center gap-4 font-mono text-[10px] tracking-wide flex-wrap" style={{ textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-      <div className="flex items-center gap-2">
-        <span
-          className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400 animate-pulse-dot' : 'bg-red-500'}`}
-        />
-        <span className={connected ? 'text-emerald-400' : 'text-red-400'} style={{ letterSpacing: '0.08em' }}>
-          {connected ? 'VectorAI DB' : 'DB offline'}
-        </span>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl p-3" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}>
+          <div className="section-label">Database</div>
+          <div className="mt-2 text-[13px]" style={{ color: connected ? '#34D399' : '#F87171', fontWeight: 700 }}>
+            {connected ? 'Actian VectorAI DB connected' : 'Database offline'}
+          </div>
+        </div>
+
+        <div className="rounded-xl p-3" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}>
+          <div className="section-label">Retrieval</div>
+          <div className="mt-2 text-[13px]" style={{ color: sanityOk === false ? '#F59E0B' : sanityOk ? '#34D399' : 'var(--text-secondary)', fontWeight: 700 }}>
+            {sanityOk === false ? 'Needs rebuild' : sanityOk ? 'Healthy' : 'Pending'}
+          </div>
+        </div>
       </div>
 
-      {frames > 0 && (
-        <span style={{ color: 'var(--text-secondary)' }}>{frames.toLocaleString()} frames indexed</span>
-      )}
+      <div className="space-y-2 text-[12px]" style={{ color: 'var(--text-secondary)' }}>
+        <div className="flex items-start justify-between gap-3">
+          <span className="section-label" style={{ whiteSpace: 'normal' }}>Indexed frames</span>
+          <span>{frames.toLocaleString()}</span>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <span className="section-label" style={{ whiteSpace: 'normal' }}>Indexed cameras</span>
+          <span>{cameras.length ? cameras.join(' · ') : '--'}</span>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <span className="section-label" style={{ whiteSpace: 'normal' }}>Last index job</span>
+          <span>{lastJob?.video || 'No completed jobs yet'}</span>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <span className="section-label" style={{ whiteSpace: 'normal' }}>Similarity check</span>
+          <span>{retrievalSanity?.similar_results ?? 0} matches</span>
+        </div>
+      </div>
 
-      {cameras.length > 0 && (
-        <span style={{ color: 'var(--text-secondary)' }}>{cameras.join(' · ')}</span>
-      )}
-
-      <div className="ml-auto flex items-center gap-1.5" style={{ color: 'var(--accent-soft)' }}>
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--signal)', boxShadow: '0 0 10px rgba(255,94,7,0.6)' }} />
-        <span>100% offline — no data leaves this machine</span>
+      <div className="rounded-xl p-3" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}>
+        <div className="section-label">Offline mode</div>
+        <div className="mt-2 text-[12px]" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+          Footage stays on this machine. If search ever shows zero results while frames are indexed, use <strong>Rebuild index</strong> in the operations panel.
+        </div>
       </div>
     </div>
   )

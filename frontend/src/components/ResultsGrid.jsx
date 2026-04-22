@@ -88,7 +88,7 @@ function EventCard({ event, onFrameClick, onSimilar }) {
                 marginBottom: '10px',
               }}
             >
-              {event.frame_count > 1 ? 'Clustered activity window from this scene' : 'Single high-signal frame match'}
+              {event.frame_count > 1 ? 'Matched activity window' : 'Matched frame'}
             </div>
 
             <div className="flex items-center gap-1.5 mb-3" style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
@@ -104,6 +104,15 @@ function EventCard({ event, onFrameClick, onSimilar }) {
           </div>
 
           <div className="flex items-center gap-3 mt-4 flex-wrap">
+            {best && (
+              <button
+                onClick={() => onFrameClick({ ...best, camera_id: event.camera_id, video_file: event.video_file })}
+                className="btn-primary"
+                style={{ padding: '8px 14px', fontSize: '12px' }}
+              >
+                <Play size={12} /> Open frame
+              </button>
+            )}
             {onSimilar && best && (
               <button
                 onClick={() => onSimilar(best.frame_id)}
@@ -197,6 +206,7 @@ function FrameCard({ frame, onClick, onSimilar }) {
           <Clock size={11} />
           <span>{fmt(frame.absolute_time)}</span>
         </div>
+        <div className="section-label" style={{ marginBottom: '10px' }}>Click card to inspect the frame</div>
         {onSimilar && (
           <button
             onClick={(e) => { e.stopPropagation(); onSimilar(frame.frame_id) }}

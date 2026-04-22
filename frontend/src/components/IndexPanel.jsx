@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, FolderOpen, Loader2 } from 'lucide-react'
-import { uploadAndIndex, scanAndIndex, getIndexingJobs, listFootage } from '../api'
+import { Upload, FolderOpen, Loader2, RotateCcw } from 'lucide-react'
+import { uploadAndIndex, scanAndIndex, rebuildIndex, getIndexingJobs, listFootage } from '../api'
+import Tooltip from './Tooltip'
 
 function JobStatus({ job }) {
   const dotColor = job.status === 'done' ? '#6EE7B7' : job.status === 'error' ? '#FCA5A5' : 'var(--accent)'
@@ -21,6 +22,7 @@ export default function IndexPanel() {
   const [jobs, setJobs] = useState({})
   const [uploading, setUploading] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false)
   const [cameraId, setCameraId] = useState('')
   const [footage, setFootage] = useState([])
   const fileRef = useRef()
@@ -96,10 +98,29 @@ export default function IndexPanel() {
     }
   }
 
+  const handleRebuild = async () => {
+    setRebuilding(true)
+    try {
+      await rebuildIndex()
+      const footageData = await listFootage()
+      setFootage(footageData.files || [])
+      const nextJobs = await getIndexingJobs()
+      setJobs(nextJobs)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
   const jobList = Object.entries(jobs)
 
   return (
     <div className="space-y-4">
+      <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+        Use this panel for recorded footage already placed in the shared `footage` folder, or upload a new clip directly.
+      </p>
+
       {/* Camera ID */}
       <div>
         <label className="section-label block mb-2">Camera ID</label>
@@ -115,25 +136,40 @@ export default function IndexPanel() {
 
       {/* Buttons */}
       <input type="file" ref={fileRef} onChange={handleUpload} accept=".mp4,.avi,.mkv,.mov,.m4v,.ts" className="hidden" />
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        className="btn-ghost w-full justify-center"
-        style={{ fontSize: '13px' }}
-      >
-        {uploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Upload size={13} /> Upload video</>}
-      </button>
+      <Tooltip content="Upload a video file and queue it for indexing">
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="btn-ghost w-full justify-center"
+          style={{ fontSize: '13px' }}
+        >
+          {uploading ? <><Loader2 size={13} className="animate-spin" /> Uploading...</> : <><Upload size={13} /> Upload video</>}
+        </button>
+      </Tooltip>
 
-      <button
-        onClick={handleScan}
-        disabled={scanning}
-        className="btn-primary w-full justify-center"
-        style={{ fontSize: '13px' }}
-      >
-        {scanning ? <><Loader2 size={13} className="animate-spin" /> Scanning...</> : <><FolderOpen size={13} /> Scan footage folder</>}
-      </button>
+      <Tooltip content="Scan the shared footage folder and index any available videos">
+        <button
+          onClick={handleScan}
+          disabled={scanning || rebuilding}
+          className="btn-primary w-full justify-center"
+          style={{ fontSize: '13px' }}
+        >
+          {scanning ? <><Loader2 size={13} className="animate-spin" /> Scanning...</> : <><FolderOpen size={13} /> Scan footage folder</>}
+        </button>
+      </Tooltip>
 
-      <p className="section-label" style={{ color: 'var(--text-muted)' }}>MP4, AVI, MKV, MOV · 1 fps · motion-gated</p>
+      <Tooltip content="Recreate the index collection and reindex every video in the shared footage folder">
+        <button
+          onClick={handleRebuild}
+          disabled={rebuilding || scanning}
+          className="btn-ghost w-full justify-center"
+          style={{ fontSize: '13px' }}
+        >
+          {rebuilding ? <><Loader2 size={13} className="animate-spin" /> Rebuilding...</> : <><RotateCcw size={13} /> Rebuild index</>}
+        </button>
+      </Tooltip>
+
+      <p className="section-label" style={{ color: 'var(--text-muted)', whiteSpace: 'normal' }}>MP4, AVI, MKV, MOV · 1 fps · motion-gated</p>
 
       {footage.length > 0 && (
         <div>
@@ -149,7 +185,7 @@ export default function IndexPanel() {
               </div>
             ))}
           </div>
-          <p className="section-label mt-2" style={{ color: 'var(--text-muted)' }}>
+          <p className="section-label mt-2" style={{ color: 'var(--text-muted)', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
             Use `Scan footage folder` for files already placed in the shared footage directory.
           </p>
         </div>

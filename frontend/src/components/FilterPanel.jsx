@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { SlidersHorizontal, X, ChevronDown } from 'lucide-react'
 import { getCameras } from '../api'
+import Tooltip from './Tooltip'
 
 export default function FilterPanel({ filters, onChange }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   const [cameras, setCameras] = useState([])
 
   useEffect(() => {
@@ -20,23 +21,25 @@ export default function FilterPanel({ filters, onChange }) {
   return (
     <div>
       <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setOpen(!open)}
-          className="btn-ghost"
-          style={open ? { color: '#16120e', borderColor: 'var(--accent)', background: 'var(--accent)' } : {}}
-        >
-          <SlidersHorizontal size={13} />
-          Filters
-          {activeCount > 0 && (
-            <span className="badge badge-blue" style={{ padding: '1px 6px', fontSize: '10px' }}>
-              {activeCount}
-            </span>
-          )}
-          <ChevronDown
-            size={13}
-            style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
-          />
-        </button>
+        <Tooltip content={open ? 'Collapse the filter controls' : 'Expand the filter controls'}>
+          <button
+            onClick={() => setOpen(!open)}
+            className="btn-ghost"
+            style={open ? { color: '#16120e', borderColor: 'var(--accent)', background: 'var(--accent)' } : {}}
+          >
+            <SlidersHorizontal size={13} />
+            Filters
+            {activeCount > 0 && (
+              <span className="badge badge-blue" style={{ padding: '1px 6px', fontSize: '10px' }}>
+                {activeCount}
+              </span>
+            )}
+            <ChevronDown
+              size={13}
+              style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
+            />
+          </button>
+        </Tooltip>
 
         {activeFilters.map(([key, val]) => (
           <span
@@ -52,22 +55,24 @@ export default function FilterPanel({ filters, onChange }) {
           </span>
         ))}
 
-        {activeCount > 1 && (
-          <button onClick={clearAll} className="text-xs transition-colors" style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
-            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-          >
-            Clear all
-          </button>
+        {activeCount > 0 && (
+          <Tooltip content="Remove every active filter">
+            <button onClick={clearAll} className="text-xs transition-colors" style={{ color: 'var(--text-muted)' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#EF4444'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            >
+              Clear all
+            </button>
+          </Tooltip>
         )}
       </div>
 
       {open && (
         <div
-          className="mt-3 p-5 rounded-[16px] grid grid-cols-2 md:grid-cols-1 xl:grid-cols-2 gap-4 animate-fade-up"
+          className="mt-3 p-5 rounded-[16px] space-y-4 animate-fade-up"
           style={{
-            background: 'rgba(10, 16, 28, 0.42)',
-            border: '1px solid rgba(255,255,255,0.05)',
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--border)',
           }}
         >
           <div>
@@ -95,28 +100,32 @@ export default function FilterPanel({ filters, onChange }) {
           </div>
 
           <div>
-            <label className="section-label block mb-2">From hour</label>
-            <input
-              type="number" min={0} max={23} placeholder="0"
-              value={filters.hourStart ?? ''}
-              onChange={(e) => update('hourStart', e.target.value ? parseInt(e.target.value) : null)}
-              className="input-field"
-              style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="section-label block mb-2">From hour</label>
+                <input
+                  type="number" min={0} max={23} placeholder="0"
+                  value={filters.hourStart ?? ''}
+                  onChange={(e) => update('hourStart', e.target.value ? parseInt(e.target.value) : null)}
+                  className="input-field"
+                  style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
+                />
+              </div>
+
+              <div>
+                <label className="section-label block mb-2">To hour</label>
+                <input
+                  type="number" min={0} max={23} placeholder="23"
+                  value={filters.hourEnd ?? ''}
+                  onChange={(e) => update('hourEnd', e.target.value ? parseInt(e.target.value) : null)}
+                  className="input-field"
+                  style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
+                />
+              </div>
+            </div>
           </div>
 
           <div>
-            <label className="section-label block mb-2">To hour</label>
-            <input
-              type="number" min={0} max={23} placeholder="23"
-              value={filters.hourEnd ?? ''}
-              onChange={(e) => update('hourEnd', e.target.value ? parseInt(e.target.value) : null)}
-              className="input-field"
-              style={{ fontSize: '13px', fontFamily: 'var(--mono)' }}
-            />
-          </div>
-
-          <div className="col-span-2 md:col-span-4">
             <div className="flex items-center justify-between mb-2">
               <label className="section-label">Min motion</label>
               <span className="font-mono text-xs" style={{ color: 'var(--accent)' }}>

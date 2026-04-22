@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Mic, MicOff, Loader2, Volume2 } from 'lucide-react'
 import { voiceQuery } from '../api'
+import Tooltip from './Tooltip'
 
 export default function VoiceButton({ onResult, onTranscript, disabled }) {
   const [state, setState] = useState('idle') // idle | recording | processing | error
@@ -108,37 +109,37 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <button
-        onClick={handleClick}
-        disabled={disabled || state === 'processing'}
-        title={state === 'recording' ? 'Click to stop recording' : 'Click to speak your query'}
-        className="relative flex items-center justify-center transition-all duration-200 active:scale-95 disabled:opacity-50"
-        style={{
-          width: '44px',
-          height: '44px',
-          borderRadius: '16px',
-          cursor: state === 'processing' ? 'wait' : 'pointer',
-          ...btnStyle,
-        }}
-      >
-        {state === 'processing' ? (
-          <Loader2 size={18} style={{ color: '#FCD34D' }} className="animate-spin" />
-        ) : state === 'recording' ? (
-          <MicOff size={18} style={{ color: 'white' }} />
-        ) : state === 'error' ? (
-          <Mic size={18} style={{ color: '#FCA5A5' }} />
-        ) : (
-          <Mic size={18} style={{ color: 'var(--text-secondary)' }} />
-        )}
+      <Tooltip content={state === 'recording' ? 'Click to stop recording' : 'Click to speak your query'}>
+        <button
+          onClick={handleClick}
+          disabled={disabled || state === 'processing'}
+          className="relative flex items-center justify-center transition-all duration-200 active:scale-95 disabled:opacity-50"
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '16px',
+            cursor: state === 'processing' ? 'wait' : 'pointer',
+            ...btnStyle,
+          }}
+        >
+          {state === 'processing' ? (
+            <Loader2 size={18} style={{ color: '#FCD34D' }} className="animate-spin" />
+          ) : state === 'recording' ? (
+            <MicOff size={18} style={{ color: 'white' }} />
+          ) : state === 'error' ? (
+            <Mic size={18} style={{ color: '#FCA5A5' }} />
+          ) : (
+            <Mic size={18} style={{ color: 'var(--text-secondary)' }} />
+          )}
 
-        {/* Pulse ring when recording */}
-        {state === 'recording' && (
-          <span
-            className="absolute inset-0 animate-ping"
-            style={{ borderRadius: '12px', background: 'rgba(239,68,68,0.35)' }}
-          />
-        )}
-      </button>
+          {state === 'recording' && (
+            <span
+              className="absolute inset-0 animate-ping"
+              style={{ borderRadius: '12px', background: 'rgba(239,68,68,0.35)' }}
+            />
+          )}
+        </button>
+      </Tooltip>
 
       {/* State label */}
       <span style={{ fontSize: '10px', lineHeight: 1, color: labelColor }}>

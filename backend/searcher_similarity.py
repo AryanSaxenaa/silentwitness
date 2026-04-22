@@ -25,6 +25,39 @@ def _safe_payload(point: Any) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _parse_search_response(search_response: Any) -> list[Any]:
+    """Normalize SDK search response wrappers into a plain hit list."""
+    if search_response is None:
+        return []
+
+    if isinstance(search_response, list):
+        return search_response
+
+    if isinstance(search_response, tuple) and search_response:
+        first = search_response[0]
+        if isinstance(first, list):
+            return first
+        try:
+            return list(first) if first is not None else []
+        except Exception:
+            return []
+
+    for attr in ("points", "results", "hits"):
+        value = getattr(search_response, attr, None)
+        if isinstance(value, list):
+            return value
+        if value is not None:
+            try:
+                return list(value)
+            except Exception:
+                pass
+
+    try:
+        return list(search_response)
+    except Exception:
+        return []
+
+
 def _normalize_vector(value: Any) -> list[float] | None:
     """
     Normalize vector payload shapes returned by SDK:
@@ -128,6 +161,7 @@ def search_similar(
         filter=db_filter,
         with_payload=True,
     )
+    raw_results = _parse_search_response(raw_results)
 
     filtered_results = [
         r

@@ -92,6 +92,44 @@ def _parse_scroll_response(scroll_response: Any) -> tuple[list[Any], Any]:
         return [], None
 
 
+def _parse_search_response(search_response: Any) -> list[Any]:
+    """
+    Normalize SDK search response variants:
+    - plain list of hits
+    - tuple where first element is hits
+    - object with .points / .results / .hits
+    """
+    if search_response is None:
+        return []
+
+    if isinstance(search_response, list):
+        return search_response
+
+    if isinstance(search_response, tuple) and search_response:
+        first = search_response[0]
+        if isinstance(first, list):
+            return first
+        try:
+            return list(first) if first is not None else []
+        except Exception:
+            return []
+
+    for attr in ("points", "results", "hits"):
+        value = getattr(search_response, attr, None)
+        if isinstance(value, list):
+            return value
+        if value is not None:
+            try:
+                return list(value)
+            except Exception:
+                pass
+
+    try:
+        return list(search_response)
+    except Exception:
+        return []
+
+
 def build_filter(filters: Optional[SearchFilters]):
     """Build VectorAI DB Filter DSL from SearchFilters."""
     if not filters:
@@ -260,6 +298,7 @@ def search(
         filter=db_filter,
         with_payload=True,
     )
+    raw_results = _parse_search_response(raw_results)
 
     fused = dbsf_fusion(raw_results)[: max(1, limit)]
 

@@ -141,6 +141,16 @@ def ensure_collection(client: VectorAIClient) -> None:
         logger.warning("collections.create() failed (may already exist): %s", exc)
 
 
+def recreate_collection(client: VectorAIClient) -> None:
+    """Delete and recreate the main collection."""
+    try:
+        client.collections.delete(COLLECTION_NAME)
+        logger.info("Collection '%s' deleted.", COLLECTION_NAME)
+    except Exception as exc:
+        logger.warning("collections.delete() failed: %s", exc)
+    ensure_collection(client)
+
+
 def collection_stats(client: VectorAIClient) -> dict[str, Any]:
     """Return basic collection metadata and total point count."""
     try:
