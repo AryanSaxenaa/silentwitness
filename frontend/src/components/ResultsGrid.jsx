@@ -26,14 +26,13 @@ function EventCard({ event, onFrameClick, onSimilar }) {
   return (
     <div
       className="card-accent animate-fade-up"
-      style={{ borderRadius: '14px', overflow: 'hidden' }}
+      style={{ borderRadius: '24px', overflow: 'hidden' }}
     >
-      <div className="flex gap-0" style={{ minHeight: '140px' }}>
+      <div className="flex gap-0" style={{ minHeight: '182px' }}>
 
-        {/* Thumbnail — fixed left column */}
         <div
           className="relative flex-shrink-0 cursor-pointer group"
-          style={{ width: '200px' }}
+          style={{ width: '250px' }}
           onClick={() => best && onFrameClick({ ...best, camera_id: event.camera_id, video_file: event.video_file })}
         >
           {thumb
@@ -48,16 +47,23 @@ function EventCard({ event, onFrameClick, onSimilar }) {
               <Play size={16} style={{ color: '#080C14', marginLeft: '2px' }} fill="#080C14" />
             </div>
           </div>
-          {/* Score badge */}
-          <div className="absolute top-2 left-2">
+          <div className="absolute top-3 left-3">
             <ScorePill score={event.best_score} />
+          </div>
+          <div
+            className="absolute bottom-0 inset-x-0"
+            style={{
+              padding: '14px 14px 12px',
+              background: 'linear-gradient(180deg, transparent, rgba(8,7,5,0.9))',
+            }}
+          >
+            <div className="section-label" style={{ color: 'rgba(255,255,255,0.65)' }}>top frame</div>
+            <div style={{ color: 'white', fontWeight: 600, marginTop: '2px' }}>{fmt(event.start_time)} to {fmt(event.end_time)}</div>
           </div>
         </div>
 
-        {/* Info */}
-        <div className="flex-1 p-4 flex flex-col justify-between min-w-0">
+        <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
           <div>
-            {/* Camera + time */}
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <div className="flex items-center gap-1.5">
                 <Camera size={12} style={{ color: 'var(--accent)' }} />
@@ -71,7 +77,20 @@ function EventCard({ event, onFrameClick, onSimilar }) {
               <span className="badge badge-gray font-mono">{durationLabel}</span>
             </div>
 
-            {/* Timestamps */}
+            <div
+              style={{
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--display)',
+                fontSize: '28px',
+                lineHeight: 1.02,
+                letterSpacing: '-0.05em',
+                maxWidth: '540px',
+                marginBottom: '10px',
+              }}
+            >
+              {event.frame_count > 1 ? 'Clustered activity window from this scene' : 'Single high-signal frame match'}
+            </div>
+
             <div className="flex items-center gap-1.5 mb-3" style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
               <Clock size={12} />
               <span>{fmt(event.start_time)}</span>
@@ -79,19 +98,17 @@ function EventCard({ event, onFrameClick, onSimilar }) {
               <span>{fmt(event.end_time)}</span>
             </div>
 
-            {/* Video filename */}
             <div className="font-mono truncate" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
               {event.video_file}
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex items-center gap-3 mt-4 flex-wrap">
             {onSimilar && best && (
               <button
                 onClick={() => onSimilar(best.frame_id)}
                 className="btn-ghost"
-                style={{ padding: '5px 12px', fontSize: '12px' }}
+                style={{ padding: '8px 14px', fontSize: '12px' }}
               >
                 <ScanSearch size={12} /> Find similar
               </button>
@@ -100,7 +117,7 @@ function EventCard({ event, onFrameClick, onSimilar }) {
               <button
                 onClick={() => setExpanded(!expanded)}
                 className="btn-ghost"
-                style={{ padding: '5px 12px', fontSize: '12px' }}
+                style={{ padding: '8px 14px', fontSize: '12px' }}
               >
                 {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 {expanded ? 'Collapse' : `All ${event.frame_count} frames`}
@@ -115,9 +132,9 @@ function EventCard({ event, onFrameClick, onSimilar }) {
         <div
           className="grid gap-1.5 p-3 animate-fade-up"
           style={{
-            gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))',
             borderTop: '1px solid var(--border)',
-            background: 'var(--bg-subtle)',
+            background: 'rgba(255,255,255,0.02)',
           }}
         >
           {event.frames.map((f) => (
@@ -152,28 +169,29 @@ function FrameCard({ frame, onClick, onSimilar }) {
   return (
     <div
       className="card group cursor-pointer animate-fade-up"
-      style={{ borderRadius: '12px', overflow: 'hidden' }}
+      style={{ borderRadius: '18px', overflow: 'hidden' }}
       onClick={() => onClick(frame)}
     >
-      {/* Thumbnail */}
       <div className="relative" style={{ aspectRatio: '16/9', background: 'var(--bg-subtle)' }}>
         {thumb
-          ? <img src={thumb} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" alt="" />
+          ? <img src={thumb} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" alt="" />
           : <div className="w-full h-full flex items-center justify-center"><Camera size={24} style={{ color: 'var(--text-muted)' }} /></div>
         }
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }}>
           <Play size={20} fill="white" style={{ color: 'white' }} />
         </div>
-        <div className="absolute top-2 left-2"><ScorePill score={frame.score} /></div>
+        <div className="absolute top-3 left-3"><ScorePill score={frame.score} /></div>
       </div>
 
-      {/* Meta */}
-      <div className="p-3">
+      <div className="p-4">
         <div className="flex items-center justify-between mb-1">
           <span className="font-mono text-xs font-medium" style={{ color: 'var(--accent)' }}>{frame.camera_id}</span>
           <span className="badge badge-gray font-mono" style={{ fontSize: '10px' }}>
             <Activity size={9} /> {Math.round(frame.motion_score * 100)}%
           </span>
+        </div>
+        <div style={{ color: 'var(--text-primary)', fontFamily: 'var(--display)', fontSize: '21px', letterSpacing: '-0.04em', lineHeight: 1.02, marginBottom: '8px' }}>
+          Frame hit at {fmt(frame.absolute_time)}
         </div>
         <div className="flex items-center gap-1.5 mb-2" style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
           <Clock size={11} />
@@ -196,21 +214,35 @@ function FrameCard({ frame, onClick, onSimilar }) {
 /* ── Stats strip (supermemory style) ── */
 function StatsStrip({ totalResults, totalEvents, query }) {
   return (
-    <div className="flex items-center gap-8 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-      <div>
+    <div
+      className="surface-grid py-4 border-b"
+      style={{ borderColor: 'var(--border)', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))' }}
+    >
+      <div className="col-span-6 md:col-span-3 xl:col-span-2">
         <div className="stat-number">{totalResults}</div>
         <div className="section-label mt-1">frames matched</div>
       </div>
       {totalEvents > 0 && (
-        <div>
+        <div className="col-span-6 md:col-span-3 xl:col-span-2">
           <div className="stat-number">{totalEvents}</div>
-          <div className="section-label mt-1">events detected</div>
+          <div className="section-label mt-1">clustered events</div>
         </div>
       )}
       {query && (
-        <div className="ml-auto">
-          <div className="font-mono text-sm" style={{ color: 'var(--accent)' }}>"{query}"</div>
-          <div className="section-label mt-1">search query</div>
+        <div className="col-span-12 md:col-span-6 xl:col-span-8">
+          <div className="section-label">current query</div>
+          <div
+            style={{
+              color: 'var(--accent-soft)',
+              fontFamily: 'var(--display)',
+              fontSize: '28px',
+              lineHeight: 1.02,
+              letterSpacing: '-0.05em',
+              marginTop: '6px',
+            }}
+          >
+            {query}
+          </div>
         </div>
       )}
     </div>
@@ -223,7 +255,7 @@ export default function ResultsGrid({ results, viewMode = 'events', onFrameSelec
 
   if (total_results === 0) {
     return (
-      <div className="text-center py-20 animate-fade-up">
+      <div className="text-center py-20 animate-fade-up card-accent" style={{ padding: '48px 24px' }}>
         <div
           className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
           style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}
@@ -257,7 +289,7 @@ export default function ResultsGrid({ results, viewMode = 'events', onFrameSelec
         )}
 
         {viewMode === 'frames' && frames?.length > 0 && (
-          <div className="grid gap-3 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }}>
+          <div className="grid gap-4 stagger" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
             {frames.map((frame) => (
               <FrameCard
                 key={frame.frame_id}

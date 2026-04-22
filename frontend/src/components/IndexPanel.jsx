@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Upload, FolderOpen, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
-import { uploadAndIndex, scanAndIndex, getIndexingJobs } from '../api'
+import { Upload, FolderOpen, Loader2 } from 'lucide-react'
+import { uploadAndIndex, scanAndIndex, getIndexingJobs, listFootage } from '../api'
 
 function JobStatus({ job }) {
   const dotColor = job.status === 'done' ? '#6EE7B7' : job.status === 'error' ? '#FCA5A5' : 'var(--accent)'
@@ -22,14 +22,45 @@ export default function IndexPanel() {
   const [uploading, setUploading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [cameraId, setCameraId] = useState('')
+  const [footage, setFootage] = useState([])
   const fileRef = useRef()
 
-  // Poll job statuses
+  const hasActiveJobs = Object.values(jobs).some((job) =>
+    ['queued', 'running'].includes(job?.status)
+  )
+
+  // Poll job statuses aggressively only while work is active.
   useEffect(() => {
-    const poll = () => getIndexingJobs().then(setJobs).catch(() => {})
+    let timeoutId
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const nextJobs = await getIndexingJobs()
+        if (!cancelled) {
+          setJobs(nextJobs)
+        }
+      } catch {
+        // Keep the panel resilient if the backend is warming up.
+      } finally {
+        if (!cancelled) {
+          const delay = hasActiveJobs ? 5000 : 20000
+          timeoutId = setTimeout(poll, delay)
+        }
+      }
+    }
+
     poll()
-    const interval = setInterval(poll, 2000)
-    return () => clearInterval(interval)
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+    }
+  }, [hasActiveJobs])
+
+  useEffect(() => {
+    listFootage()
+      .then((data) => setFootage(data.files || []))
+      .catch(() => setFootage([]))
   }, [])
 
   const handleUpload = async (e) => {
@@ -38,6 +69,10 @@ export default function IndexPanel() {
     setUploading(true)
     try {
       await uploadAndIndex(file, cameraId || null)
+      const footageData = await listFootage()
+      setFootage(footageData.files || [])
+      const nextJobs = await getIndexingJobs()
+      setJobs(nextJobs)
     } catch (err) {
       console.error(err)
     } finally {
@@ -50,6 +85,10 @@ export default function IndexPanel() {
     setScanning(true)
     try {
       await scanAndIndex()
+      const footageData = await listFootage()
+      setFootage(footageData.files || [])
+      const nextJobs = await getIndexingJobs()
+      setJobs(nextJobs)
     } catch (err) {
       console.error(err)
     } finally {
@@ -95,6 +134,26 @@ export default function IndexPanel() {
       </button>
 
       <p className="section-label" style={{ color: 'var(--text-muted)' }}>MP4, AVI, MKV, MOV · 1 fps · motion-gated</p>
+
+      {footage.length > 0 && (
+        <div>
+          <p className="section-label mb-2">Footage folder</p>
+          <div
+            className="space-y-2 rounded-xl p-3"
+            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}
+          >
+            {footage.slice(0, 6).map((file) => (
+              <div key={file.filename} className="flex items-center justify-between gap-3 text-[12px]">
+                <span className="truncate" style={{ color: 'var(--text-secondary)' }}>{file.filename}</span>
+                <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{file.size_mb} MB</span>
+              </div>
+            ))}
+          </div>
+          <p className="section-label mt-2" style={{ color: 'var(--text-muted)' }}>
+            Use `Scan footage folder` for files already placed in the shared footage directory.
+          </p>
+        </div>
+      )}
 
       {jobList.length > 0 && (
         <div style={{ marginTop: '8px' }}>

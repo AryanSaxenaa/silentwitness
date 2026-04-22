@@ -64,9 +64,8 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
   return (
     <div
       className="rounded-xl overflow-hidden"
-      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+      style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', backdropFilter: 'blur(14px)' }}
     >
-      {/* Header */}
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between px-4 py-3 transition-colors"
@@ -93,28 +92,36 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
           {Object.entries(byDate).map(([dateStr, buckets]) => (
             <div key={dateStr}>
               <div className="section-label mb-2">{dateStr}</div>
-
-              {/* Heatmap bar */}
-              <div className="flex items-end gap-0.5 overflow-x-auto pb-1" style={{ height: '64px' }}>
+              <div
+                className="timeline-track"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${Math.max(buckets.length, 12)}, minmax(18px, 1fr))`,
+                  alignItems: 'end',
+                  gap: '6px',
+                  minHeight: '92px',
+                  padding: '12px 0 8px',
+                }}
+              >
                 {buckets.map((bucket) => {
-                  const heightPct = Math.max(4, (bucket.count / maxCount) * 100)
+                  const heightPct = Math.max(18, (bucket.count / maxCount) * 100)
                   const isHot = bucket.max_motion > 0.3
                   const isMid = bucket.count > maxCount * 0.5
                   const isHovered = hoveredBucket?.time === bucket.time
 
-                  let barBg = 'rgba(59,130,246,0.35)'
+                  let barBg = 'rgba(3,196,255,0.35)'
                   if (isHot) barBg = 'rgba(239,68,68,0.65)'
-                  else if (isMid) barBg = 'rgba(245,158,11,0.55)'
+                  else if (isMid) barBg = 'rgba(253,90,27,0.55)'
 
-                  let barHoverBg = 'rgba(59,130,246,0.6)'
+                  let barHoverBg = 'rgba(3,196,255,0.6)'
                   if (isHot) barHoverBg = 'rgba(239,68,68,0.85)'
-                  else if (isMid) barHoverBg = 'rgba(245,158,11,0.8)'
+                  else if (isMid) barHoverBg = 'rgba(253,90,27,0.8)'
 
                   return (
                     <div
                       key={bucket.time}
-                      className="relative flex-shrink-0 cursor-pointer"
-                      style={{ width: '14px' }}
+                      className="relative cursor-pointer"
+                      style={{ minWidth: '18px', height: '72px', display: 'flex', alignItems: 'end' }}
                       onMouseEnter={() => setHoveredBucket(bucket)}
                       onMouseLeave={() => setHoveredBucket(null)}
                       onClick={() => onBucketClick?.(bucket)}
@@ -124,30 +131,36 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
                           width: '100%',
                           height: `${heightPct}%`,
                           background: barBg,
-                          borderRadius: '3px',
+                          borderRadius: '6px 6px 3px 3px',
                           outline: isHovered ? '1px solid var(--accent)' : 'none',
-                          transition: 'background 100ms',
+                          transition: 'background 100ms, transform 100ms',
+                          boxShadow: isHovered ? '0 0 0 1px rgba(137,206,255,0.35)' : 'none',
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = barHoverBg}
-                        onMouseLeave={e => e.currentTarget.style.background = barBg}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = barHoverBg
+                          e.currentTarget.style.transform = 'translateY(-1px)'
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = barBg
+                          e.currentTarget.style.transform = 'translateY(0)'
+                        }}
                       />
                     </div>
                   )
                 })}
               </div>
 
-              {/* X-axis labels — every hour (12 buckets at 5min intervals) */}
               <div
                 className="flex items-center mt-1 relative"
-                style={{ height: '12px', color: 'var(--text-muted)', fontSize: '9px' }}
+                style={{ minHeight: '18px', color: 'var(--text-muted)', fontSize: '9px' }}
               >
                 {buckets
-                  .filter((_, i) => i % 12 === 0)
+                  .filter((_, i) => i === 0 || i === buckets.length - 1 || i % 6 === 0)
                   .map((bucket) => (
                     <div
                       key={bucket.time}
                       className="absolute"
-                      style={{ left: `${(buckets.indexOf(bucket) / buckets.length) * 100}%` }}
+                      style={{ left: `${(buckets.indexOf(bucket) / Math.max(buckets.length - 1, 1)) * 100}%`, transform: 'translateX(-50%)' }}
                     >
                       {formatBucketTime(bucket.time)}
                     </div>
@@ -156,14 +169,13 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
             </div>
           ))}
 
-          {/* Legend */}
           <div className="flex items-center gap-4 pt-1" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(59,130,246,0.35)' }} />
+              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(3,196,255,0.35)' }} />
               <span>Low activity</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(245,158,11,0.55)' }} />
+              <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(253,90,27,0.55)' }} />
               <span>Moderate</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -172,7 +184,6 @@ export default function Timeline({ cameraId, date, onBucketClick }) {
             </div>
           </div>
 
-          {/* Tooltip */}
           {hoveredBucket && (
             <div
               className="rounded-xl p-3 space-y-1"

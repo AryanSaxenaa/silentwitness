@@ -95,8 +95,9 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
       border: '1px solid rgba(239,68,68,0.3)',
     }
     return {
-      background: 'var(--bg-subtle)',
-      border: '1px solid var(--border)',
+      background: 'rgba(255,255,255,0.08)',
+      border: '2px solid var(--accent)',
+      boxShadow: '0 0 18px rgba(3,196,255,0.12)',
     }
   })()
 
@@ -115,7 +116,7 @@ export default function VoiceButton({ onResult, onTranscript, disabled }) {
         style={{
           width: '44px',
           height: '44px',
-          borderRadius: '12px',
+          borderRadius: '16px',
           cursor: state === 'processing' ? 'wait' : 'pointer',
           ...btnStyle,
         }}

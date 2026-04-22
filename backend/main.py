@@ -2,26 +2,27 @@
 SilentWitness — FastAPI backend
 Offline, privacy-first semantic search for security footage.
 """
-import os
-import logging
+
 import asyncio
-from pathlib import Path
+import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
+from config import COLLECTION_NAME, FOOTAGE_DIR, THUMBNAILS_DIR
+from db import close_client, collection_stats, ensure_collection, get_client
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from indexer import get_clip_model, index_video
+from live import get_live_status, start_live_feed, stop_live_feed
 from pydantic import BaseModel
-
-from config import FOOTAGE_DIR, THUMBNAILS_DIR, DATA_DIR, COLLECTION_NAME
-from db import get_client, ensure_collection, collection_stats
-from indexer import index_video, index_all_footage, get_clip_model
-from searcher import search, SearchFilters, list_cameras
+from searcher import SearchFilters, build_filter, list_cameras, search
 from searcher_similarity import search_similar
-from voice import transcribe_audio_bytes, get_whisper_model
-from live import start_live_feed, stop_live_feed, get_live_status
+from voice import get_whisper_model, transcribe_audio_bytes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -30,23 +31,66 @@ logger = logging.getLogger(__name__)
 indexing_jobs: dict[str, dict] = {}
 
 
+def _parse_scroll_response(scroll_response: Any) -> tuple[list[Any], Any]:
+    """
+    Normalize SDK scroll response variants:
+    - (points, next_offset)
+    - object with .points and .next_page_offset
+    - plain list of points
+    """
+    if isinstance(scroll_response, tuple) and len(scroll_response) == 2:
+        points, next_offset = scroll_response
+        if isinstance(points, list):
+            return points, next_offset
+        try:
+            return list(points) if points is not None else [], next_offset
+        except Exception:
+            return [], next_offset
+
+    points_attr = getattr(scroll_response, "points", None)
+    if isinstance(points_attr, list):
+        return points_attr, getattr(scroll_response, "next_page_offset", None)
+
+    if isinstance(scroll_response, list):
+        return scroll_response, None
+
+    if scroll_response is None:
+        return [], None
+
+    try:
+        return list(scroll_response), None
+    except Exception:
+        return [], None
+
+
+def _startup_db() -> None:
+    """Blocking DB startup — run inside a thread, never in the event loop."""
+    client = get_client()
+    ensure_collection(client)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: warm up CLIP model and ensure DB collection exists."""
+    """Startup: warm up models and ensure DB collection exists."""
     logger.info("SilentWitness starting up...")
+
+    # Run blocking DB connect/ensure_collection in a thread so the
+    # async event loop is never blocked during startup.
     try:
-        client = get_client()
-        ensure_collection(client)
+        await asyncio.to_thread(_startup_db)
         logger.info("VectorAI DB collection ready.")
     except Exception as e:
-        logger.warning(f"VectorAI DB not available at startup: {e}. Will retry on first request.")
+        logger.warning(
+            f"VectorAI DB not available at startup: {e}. Will retry on first request."
+        )
 
-    # Warm up CLIP and Whisper in background so first use is instant
+    # Warm up CLIP and Whisper in background so first request is instant.
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, get_clip_model)
     loop.run_in_executor(None, get_whisper_model)
 
     yield
+    await asyncio.to_thread(close_client)
     logger.info("SilentWitness shutting down.")
 
 
@@ -72,6 +116,7 @@ app.mount("/thumbnails", StaticFiles(directory=THUMBNAILS_DIR), name="thumbnails
 
 # ─── Health & Status ─────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "silentwitness"}
@@ -94,12 +139,13 @@ def status():
 
 # ─── Search ──────────────────────────────────────────────────────────────────
 
+
 class SearchRequest(BaseModel):
     query: str
     camera_id: Optional[str] = None
-    date: Optional[str] = None           # "YYYY-MM-DD"
-    hour_start: Optional[int] = None     # 0-23
-    hour_end: Optional[int] = None       # 0-23
+    date: Optional[str] = None
+    hour_start: Optional[int] = None
+    hour_end: Optional[int] = None
     min_motion_score: Optional[float] = None
     limit: int = 20
     group_into_events: bool = True
@@ -107,12 +153,6 @@ class SearchRequest(BaseModel):
 
 @app.post("/api/search")
 def search_footage(req: SearchRequest):
-    """
-    Semantic search over indexed footage.
-    Text query is embedded with CLIP and compared against frame embeddings.
-    Filter DSL narrows results before vector comparison.
-    DBSF fusion re-ranks by combining CLIP score + motion score.
-    """
     try:
         filters = SearchFilters(
             camera_id=req.camera_id,
@@ -121,13 +161,12 @@ def search_footage(req: SearchRequest):
             hour_end=req.hour_end,
             min_motion_score=req.min_motion_score,
         )
-        results = search(
+        return search(
             query=req.query,
             filters=filters,
             limit=req.limit,
             group_into_events=req.group_into_events,
         )
-        return results
     except Exception as e:
         logger.error(f"Search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -143,7 +182,6 @@ def search_footage_get(
     min_motion_score: Optional[float] = None,
     limit: int = 20,
 ):
-    """GET version for quick browser/curl testing."""
     req = SearchRequest(
         query=q,
         camera_id=camera_id,
@@ -158,13 +196,10 @@ def search_footage_get(
 
 # ─── Indexing ─────────────────────────────────────────────────────────────────
 
-class IndexRequest(BaseModel):
-    camera_id: Optional[str] = None
-    fps_sample: float = 1.0
 
-
-def _run_index_job(job_id: str, video_path: str, camera_id: Optional[str], fps_sample: float):
-    """Background task: index a single video file."""
+def _run_index_job(
+    job_id: str, video_path: str, camera_id: Optional[str], fps_sample: float
+):
     indexing_jobs[job_id] = {"status": "running", "video": os.path.basename(video_path)}
     try:
         result = index_video(video_path, camera_id=camera_id, fps_sample=fps_sample)
@@ -180,38 +215,56 @@ async def upload_and_index(
     camera_id: Optional[str] = None,
     fps_sample: float = 1.0,
 ):
-    """Upload a video file and index it in the background."""
-    supported = {".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts"}
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in supported:
-        raise HTTPException(status_code=400, detail=f"Unsupported format: {suffix}")
+    """
+    Upload a video file and index it in the background.
 
-    save_path = os.path.join(FOOTAGE_DIR, file.filename)
+    Fix: optional upload metadata handling
+    - `file.filename` can be None in some clients; we now handle that safely.
+    """
+    supported = {".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts"}
+
+    filename = file.filename or "upload.mp4"
+    safe_name = os.path.basename(filename).strip() or "upload.mp4"
+    suffix = Path(safe_name).suffix.lower()
+
+    if suffix not in supported:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported format: {suffix or 'unknown'}"
+        )
+
+    os.makedirs(FOOTAGE_DIR, exist_ok=True)
+    save_path = os.path.join(FOOTAGE_DIR, safe_name)
+    if os.path.exists(save_path):
+        stem = Path(safe_name).stem
+        suffix = Path(safe_name).suffix
+        save_path = os.path.join(FOOTAGE_DIR, f"{stem}_{uuid.uuid4().hex[:8]}{suffix}")
+        safe_name = os.path.basename(save_path)
+
     with open(save_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
     import uuid as _uuid
-    job_id = f"{Path(file.filename).stem}_{_uuid.uuid4().hex[:8]}"
+
+    job_id = f"{Path(safe_name).stem}_{_uuid.uuid4().hex[:8]}"
     background_tasks.add_task(_run_index_job, job_id, save_path, camera_id, fps_sample)
 
-    return {"job_id": job_id, "status": "queued", "video": file.filename}
+    return {"job_id": job_id, "status": "queued", "video": safe_name}
 
 
 @app.post("/api/index/scan")
 def scan_and_index_all(background_tasks: BackgroundTasks, fps_sample: float = 1.0):
-    """Scan footage directory and index all videos found."""
     supported = {".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts"}
-    videos = [
-        f for f in os.listdir(FOOTAGE_DIR)
-        if Path(f).suffix.lower() in supported
-    ]
+    videos = [f for f in os.listdir(FOOTAGE_DIR) if Path(f).suffix.lower() in supported]
     if not videos:
-        return {"message": "No video files found in footage directory.", "footage_dir": FOOTAGE_DIR}
+        return {
+            "message": "No video files found in footage directory.",
+            "footage_dir": FOOTAGE_DIR,
+        }
 
     job_ids = []
     for fname in videos:
-        job_id = f"scan_{fname}"
+        job_id = f"scan_{Path(fname).stem}_{uuid.uuid4().hex[:8]}"
         path = os.path.join(FOOTAGE_DIR, fname)
         background_tasks.add_task(_run_index_job, job_id, path, None, fps_sample)
         job_ids.append(job_id)
@@ -222,7 +275,6 @@ def scan_and_index_all(background_tasks: BackgroundTasks, fps_sample: float = 1.
 
 @app.get("/api/index/jobs")
 def get_indexing_jobs():
-    """Check status of all indexing jobs."""
     return indexing_jobs
 
 
@@ -235,6 +287,7 @@ def get_job_status(job_id: str):
 
 # ─── Voice query ────────────────────────────────────────────────────────────────
 
+
 @app.post("/api/voice")
 async def voice_query(
     background_tasks: BackgroundTasks,
@@ -246,14 +299,11 @@ async def voice_query(
     min_motion_score: Optional[float] = None,
     limit: int = 20,
 ):
-    """
-    Transcribe audio with local Whisper, then run semantic search.
-    Audio is processed entirely on-device — no cloud API calls.
-    Accepts: webm, wav, mp3, ogg, m4a
-    """
     audio_bytes = await audio.read()
     try:
-        text = transcribe_audio_bytes(audio_bytes, mime_type=audio.content_type or "audio/webm")
+        text = transcribe_audio_bytes(
+            audio_bytes, mime_type=audio.content_type or "audio/webm"
+        )
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Transcription failed: {e}")
 
@@ -273,6 +323,7 @@ async def voice_query(
 
 # ─── Similarity search ────────────────────────────────────────────────────────
 
+
 class SimilarityRequest(BaseModel):
     frame_id: str
     camera_id: Optional[str] = None
@@ -286,11 +337,6 @@ class SimilarityRequest(BaseModel):
 
 @app.post("/api/search/similar")
 def search_similar_frames(req: SimilarityRequest):
-    """
-    Find frames visually similar to an existing indexed frame.
-    Uses the stored CLIP vector directly — no text query, no re-embedding.
-    The 'find every time this person appeared' feature.
-    """
     filters = SearchFilters(
         camera_id=req.camera_id,
         date=req.date,
@@ -312,6 +358,7 @@ def search_similar_frames(req: SimilarityRequest):
 
 # ─── Timeline / activity heatmap ─────────────────────────────────────────────
 
+
 @app.get("/api/timeline")
 def get_timeline(
     camera_id: Optional[str] = None,
@@ -320,18 +367,19 @@ def get_timeline(
 ):
     """
     Returns activity heatmap data: frame counts bucketed by time.
-    Used to render the incident timeline visualization in the frontend.
+    Fix: stabilized timeline scroll typing/parsing for SDK response variants.
     """
     try:
         client = get_client()
-        # Scroll through all frames and bucket by time
-        from collections import defaultdict
-        from searcher import build_filter, SearchFilters
-
         filters = SearchFilters(camera_id=camera_id, date=date)
         db_filter = build_filter(filters)
 
-        buckets = defaultdict(lambda: {"count": 0, "max_motion": 0.0, "frames": []})
+        from collections import defaultdict
+        from datetime import datetime
+
+        buckets: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "max_motion": 0.0, "frames": []}
+        )
 
         offset = None
         while True:
@@ -339,52 +387,56 @@ def get_timeline(
                 COLLECTION_NAME,
                 limit=200,
                 offset=offset,
-                query_filter=db_filter,
-                with_payload=["absolute_time", "motion_score", "camera_id", "thumbnail_path", "timestamp_sec"],
+                filter=db_filter,
+                with_payload=True,
             )
-            # SDK may return (results, next_offset) tuple OR a ScrollResult object
-            if isinstance(scroll_response, (list, tuple)) and len(scroll_response) == 2:
-                results, next_offset = scroll_response
-            elif hasattr(scroll_response, "points"):
-                results = scroll_response.points
-                next_offset = getattr(scroll_response, "next_page_offset", None)
-            else:
-                results = scroll_response
-                next_offset = None
-            for point in results:
-                p = point.payload
-                abs_time = p.get("absolute_time", "")
+
+            points, next_offset = _parse_scroll_response(scroll_response)
+            if not points:
+                break
+
+            for point in points:
+                payload = getattr(point, "payload", {}) or {}
+                if not isinstance(payload, dict):
+                    continue
+
+                abs_time = payload.get("absolute_time", "")
                 if not abs_time:
                     continue
+
                 try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(abs_time)
-                    # Bucket key: floor to bucket_minutes
-                    bucket_min = (dt.hour * 60 + dt.minute) // bucket_minutes * bucket_minutes
-                    bucket_key = f"{dt.date().isoformat()}T{bucket_min // 60:02d}:{bucket_min % 60:02d}"
-                    buckets[bucket_key]["count"] += 1
-                    motion = p.get("motion_score", 0.0)
-                    if motion > buckets[bucket_key]["max_motion"]:
-                        buckets[bucket_key]["max_motion"] = motion
-                    if len(buckets[bucket_key]["frames"]) < 3:
-                        buckets[bucket_key]["frames"].append({
-                            "frame_id": str(point.id),
-                            "thumbnail_path": p.get("thumbnail_path"),
-                            "timestamp_sec": p.get("timestamp_sec"),
-                            "absolute_time": abs_time,
-                        })
+                    dt = datetime.fromisoformat(str(abs_time))
                 except Exception:
                     continue
 
-            if next_offset is None or not results:
+                bucket_min = (
+                    (dt.hour * 60 + dt.minute) // bucket_minutes
+                ) * bucket_minutes
+                bucket_key = f"{dt.date().isoformat()}T{bucket_min // 60:02d}:{bucket_min % 60:02d}"
+
+                bucket = buckets[bucket_key]
+                bucket["count"] = int(bucket.get("count", 0)) + 1
+
+                motion = float(payload.get("motion_score", 0.0) or 0.0)
+                if motion > float(bucket.get("max_motion", 0.0) or 0.0):
+                    bucket["max_motion"] = motion
+
+                frames_list = bucket.get("frames")
+                if isinstance(frames_list, list) and len(frames_list) < 3:
+                    frames_list.append(
+                        {
+                            "frame_id": str(getattr(point, "id", "")),
+                            "thumbnail_path": payload.get("thumbnail_path"),
+                            "timestamp_sec": payload.get("timestamp_sec"),
+                            "absolute_time": str(abs_time),
+                        }
+                    )
+
+            if next_offset is None:
                 break
             offset = next_offset
 
-        # Sort by bucket key
-        sorted_buckets = [
-            {"time": k, **v}
-            for k, v in sorted(buckets.items())
-        ]
+        sorted_buckets = [{"time": k, **v} for k, v in sorted(buckets.items())]
         return {
             "camera_id": camera_id,
             "date": date,
@@ -392,6 +444,7 @@ def get_timeline(
             "total_buckets": len(sorted_buckets),
             "timeline": sorted_buckets,
         }
+
     except Exception as e:
         logger.error(f"Timeline failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -399,8 +452,9 @@ def get_timeline(
 
 # ─── Live webcam feed ─────────────────────────────────────────────────────────
 
+
 class LiveStartRequest(BaseModel):
-    source: str = "0"            # "0" = default webcam, or RTSP URL
+    source: str = "0"
     camera_id: str = "live"
     fps_sample: float = 1.0
     min_motion_score: float = 0.01
@@ -408,51 +462,47 @@ class LiveStartRequest(BaseModel):
 
 @app.post("/api/live/start")
 def live_start(req: LiveStartRequest):
-    """Start live webcam indexing in background thread."""
-    # Convert string "0" to int for webcam index
     source = int(req.source) if req.source.isdigit() else req.source
-    result = start_live_feed(
+    return start_live_feed(
         source=source,
         camera_id=req.camera_id,
         fps_sample=req.fps_sample,
         min_motion_score=req.min_motion_score,
     )
-    return result
 
 
 @app.post("/api/live/stop")
 def live_stop(camera_id: str = Query(default="live", description="Camera ID to stop")):
-    """Stop a running live feed indexer."""
     return stop_live_feed(camera_id)
 
 
 @app.get("/api/live/status")
 def live_status():
-    """Get status of all live feed indexers."""
     return get_live_status()
 
 
 # ─── Footage management ────────────────────────────────────────────────────────
 
+
 @app.get("/api/footage")
 def list_footage():
-    """List all video files in the footage directory."""
     supported = {".mp4", ".avi", ".mkv", ".mov", ".m4v", ".ts"}
     files = []
     for fname in os.listdir(FOOTAGE_DIR):
         if Path(fname).suffix.lower() in supported:
             path = os.path.join(FOOTAGE_DIR, fname)
-            files.append({
-                "filename": fname,
-                "size_mb": round(os.path.getsize(path) / 1_000_000, 2),
-                "path": path,
-            })
+            files.append(
+                {
+                    "filename": fname,
+                    "size_mb": round(os.path.getsize(path) / 1_000_000, 2),
+                    "path": path,
+                }
+            )
     return {"footage_dir": FOOTAGE_DIR, "files": files}
 
 
 @app.get("/api/cameras")
 def get_cameras():
-    """Return all camera IDs present in the index."""
     try:
         client = get_client()
         return {"cameras": list_cameras(client)}
@@ -462,7 +512,6 @@ def get_cameras():
 
 @app.get("/api/thumbnail/{frame_id}")
 def get_thumbnail(frame_id: str):
-    """Serve a frame thumbnail by frame ID."""
     thumb_path = os.path.join(THUMBNAILS_DIR, f"{frame_id}.jpg")
     if not os.path.exists(thumb_path):
         raise HTTPException(status_code=404, detail="Thumbnail not found")

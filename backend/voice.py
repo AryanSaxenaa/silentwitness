@@ -2,19 +2,60 @@
 Voice query transcription using OpenAI Whisper (runs 100% locally).
 Model: whisper-tiny — ~150MB, fast enough for real-time demo use.
 On 8GB RAM: coexists with CLIP and VectorAI DB comfortably.
-"""
-import io
-import logging
-import tempfile
-import os
-import threading
 
-import numpy as np
+CPU-only torch note
+-------------------
+When torch is installed without CUDA (cpu-only wheels), Whisper's default
+load path calls model.to(device) on a meta-tensor checkpoint, which raises
+NotImplementedError on some torch versions. We work around this by:
+  1. Forcing device="cpu" explicitly.
+  2. Catching the meta-tensor error and reloading with in_memory=False.
+"""
+
+import logging
+import os
+import tempfile
+import threading
 
 logger = logging.getLogger(__name__)
 
 _whisper_model = None
 _whisper_lock = threading.Lock()
+
+
+def _load_whisper_safe():
+    """Load whisper tiny with a fallback for CPU-only / meta-tensor issues."""
+    import torch
+    import whisper
+
+    device = "cpu"
+
+    try:
+        model = whisper.load_model("tiny", device=device)
+        return model
+    except (NotImplementedError, RuntimeError) as exc:
+        logger.warning(
+            "Whisper load_model('tiny') failed (%s). "
+            "Retrying with download_root workaround...",
+            exc,
+        )
+
+    # Fallback: load weights manually onto CPU to bypass meta-tensor issue.
+    try:
+        checkpoint = whisper._download(
+            whisper._MODELS["tiny"],
+            root=os.path.join(os.path.expanduser("~"), ".cache", "whisper"),
+            in_memory=False,
+        )
+        dims = whisper.ModelDimensions(**checkpoint["dims"])
+        model = whisper.Whisper(dims)
+        model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+        model = model.to(torch.float32).to(device)
+        model.eval()
+        return model
+    except Exception as exc2:
+        logger.error("Whisper fallback load also failed: %s", exc2)
+        raise
 
 
 def get_whisper_model():
@@ -24,8 +65,7 @@ def get_whisper_model():
         with _whisper_lock:
             if _whisper_model is None:
                 logger.info("Loading Whisper tiny model (~150MB)...")
-                import whisper
-                _whisper_model = whisper.load_model("tiny")
+                _whisper_model = _load_whisper_safe()
                 logger.info("Whisper model loaded.")
     return _whisper_model
 

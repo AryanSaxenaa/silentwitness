@@ -3,12 +3,12 @@ import { Search, Loader2, X, ArrowRight } from 'lucide-react'
 import VoiceButton from './VoiceButton'
 
 const EXAMPLE_QUERIES = [
-  'person leaving a bag near the counter',
-  'someone entering through the back door',
-  'two people having an argument',
-  'car in restricted area',
-  'person running',
-  'package left unattended',
+  'person entering store',
+  'person near shelves',
+  'person walking in the store',
+  'two people in frame',
+  'person at entrance',
+  'customer moving through aisle',
 ]
 
 export default function SearchBar({ onSearch, loading, onVoiceResult }) {
@@ -22,20 +22,29 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
 
   const handleExample = (q) => {
     setQuery(q)
-    onSearch(q)
+    inputRef.current?.focus()
   }
 
   return (
     <div className="w-full">
-      {/* Main input row */}
       <form onSubmit={handleSubmit}>
-        <div className="flex items-center gap-3">
-          {/* Input wrapper */}
-          <div className="relative flex-1">
+        <div
+          className="relative"
+          style={{
+            padding: '10px',
+            borderRadius: '18px',
+            border: '1px solid rgba(137, 206, 255, 0.16)',
+            background: 'var(--panel-strong)',
+            backdropFilter: 'blur(20px)',
+            boxShadow: '0 0 20px rgba(0, 180, 255, 0.08)',
+          }}
+        >
+          <div className="search-shell">
+            <div className="relative flex-1 min-w-0">
             <Search
-              size={17}
+              size={19}
               className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ color: 'var(--text-muted)' }}
+              style={{ color: 'var(--accent)' }}
             />
             <input
               ref={inputRef}
@@ -44,7 +53,16 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Describe what you're looking for in plain English..."
               className="input-field"
-              style={{ paddingLeft: '42px', paddingRight: query ? '100px' : '16px', paddingTop: '14px', paddingBottom: '14px', fontSize: '15px', borderRadius: '10px' }}
+              style={{
+                paddingLeft: '46px',
+                paddingRight: query ? '132px' : '18px',
+                paddingTop: '20px',
+                paddingBottom: '20px',
+                fontSize: '17px',
+                borderRadius: '12px',
+                fontFamily: 'var(--mono)',
+                letterSpacing: '0.02em',
+              }}
               disabled={loading}
             />
             {query && (
@@ -60,46 +78,50 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
             <button
               type="submit"
               disabled={!query.trim() || loading}
-              className="btn-primary absolute right-2 top-1/2 -translate-y-1/2"
-              style={{ padding: '7px 14px', fontSize: '13px', borderRadius: '7px' }}
+              className="search-submit absolute right-2 top-1/2 -translate-y-1/2"
             >
               {loading
                 ? <Loader2 size={14} className="animate-spin" />
-                : <><Search size={13} /> Search</>
+                : <>Search</>
               }
             </button>
           </div>
 
-          {/* Voice button */}
           <VoiceButton
             onResult={onVoiceResult}
             onTranscript={(text) => setQuery(text)}
             disabled={loading}
           />
+          </div>
         </div>
       </form>
 
-      {/* Example queries — supermemory pill style */}
-      <div className="mt-3 flex flex-wrap gap-2 items-center">
-        <span className="section-label mr-1">Try:</span>
+      <div className="mt-4 flex flex-wrap gap-2 items-center">
+        <span className="section-label mr-1">Suggested prompts for current demo footage</span>
         {EXAMPLE_QUERIES.map((q) => (
           <button
             key={q}
             onClick={() => handleExample(q)}
             className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-full transition-all"
             style={{
-              background: 'var(--bg-subtle)',
-              border: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.07)',
               color: 'var(--text-secondary)',
-              fontSize: '12px',
+              fontSize: '11px',
+              fontFamily: 'var(--mono)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              padding: '8px 12px',
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'var(--border-hover)'
-              e.currentTarget.style.color = 'var(--text-primary)'
+              e.currentTarget.style.borderColor = 'rgba(137, 206, 255, 0.24)'
+              e.currentTarget.style.color = 'var(--accent)'
+              e.currentTarget.style.transform = 'translateY(-1px)'
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'var(--border)'
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
               e.currentTarget.style.color = 'var(--text-secondary)'
+              e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
             {q} <ArrowRight size={10} />

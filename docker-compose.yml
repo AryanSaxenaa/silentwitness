@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   vectoraidb:
     image: williamimoh/actian-vectorai-db:latest
@@ -21,15 +19,39 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./footage:/app/footage        # mount local footage folder
-      - ./data/index:/app/data        # frame thumbnails + metadata cache
+      - ./footage:/app/footage # mount local footage folder
+      - ./data/index:/app/data # frame thumbnails + metadata cache
     environment:
       - VECTORAI_HOST=vectoraidb
       - VECTORAI_PORT=50051
       - FOOTAGE_DIR=/app/footage
       - DATA_DIR=/app/data
-      - FRAME_RATE=1                  # frames per second to index
-      - MOTION_THRESHOLD=25           # pixel diff threshold for motion detection
+      - FRAME_RATE=1 # frames per second to index
+      - MOTION_THRESHOLD=25 # pixel diff threshold for motion detection
+    depends_on:
+      vectoraidb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend-dev-fast:
+    profiles: ["dev-fast"]
+    build:
+      context: ./backend
+      args:
+        - PRELOAD_MODELS=0
+    container_name: silentwitness-backend-dev-fast
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./footage:/app/footage # mount local footage folder
+      - ./data/index:/app/data # frame thumbnails + metadata cache
+    environment:
+      - VECTORAI_HOST=vectoraidb
+      - VECTORAI_PORT=50051
+      - FOOTAGE_DIR=/app/footage
+      - DATA_DIR=/app/data
+      - FRAME_RATE=1 # frames per second to index
+      - MOTION_THRESHOLD=25 # pixel diff threshold for motion detection
     depends_on:
       vectoraidb:
         condition: service_healthy

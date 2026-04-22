@@ -19,12 +19,11 @@ export default function FilterPanel({ filters, onChange }) {
 
   return (
     <div>
-      {/* Trigger row — pill-style */}
       <div className="flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setOpen(!open)}
           className="btn-ghost"
-          style={open ? { color: 'var(--accent)', borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}
+          style={open ? { color: '#16120e', borderColor: 'var(--accent)', background: 'var(--accent)' } : {}}
         >
           <SlidersHorizontal size={13} />
           Filters
@@ -39,14 +38,13 @@ export default function FilterPanel({ filters, onChange }) {
           />
         </button>
 
-        {/* Active filter pills */}
         {activeFilters.map(([key, val]) => (
           <span
             key={key}
             className="badge badge-blue flex items-center gap-1.5"
             style={{ padding: '4px 10px' }}
           >
-            <span className="font-mono text-[10px] uppercase tracking-wider opacity-60">{key}</span>
+            <span className="font-mono text-[10px] tracking-wider opacity-60">{key}</span>
             <span>{String(val)}</span>
             <button onClick={() => update(key, null)} className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity">
               <X size={10} />
@@ -64,13 +62,14 @@ export default function FilterPanel({ filters, onChange }) {
         )}
       </div>
 
-      {/* Expanded filter panel */}
       {open && (
         <div
-          className="mt-3 p-4 rounded-xl grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-up"
-          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+          className="mt-3 p-5 rounded-[16px] grid grid-cols-2 md:grid-cols-1 xl:grid-cols-2 gap-4 animate-fade-up"
+          style={{
+            background: 'rgba(10, 16, 28, 0.42)',
+            border: '1px solid rgba(255,255,255,0.05)',
+          }}
         >
-          {/* Camera */}
           <div>
             <label className="section-label block mb-2">Camera</label>
             <select
@@ -84,7 +83,6 @@ export default function FilterPanel({ filters, onChange }) {
             </select>
           </div>
 
-          {/* Date */}
           <div>
             <label className="section-label block mb-2">Date</label>
             <input
@@ -96,7 +94,6 @@ export default function FilterPanel({ filters, onChange }) {
             />
           </div>
 
-          {/* Hour from */}
           <div>
             <label className="section-label block mb-2">From hour</label>
             <input
@@ -108,7 +105,6 @@ export default function FilterPanel({ filters, onChange }) {
             />
           </div>
 
-          {/* Hour to */}
           <div>
             <label className="section-label block mb-2">To hour</label>
             <input
@@ -120,7 +116,6 @@ export default function FilterPanel({ filters, onChange }) {
             />
           </div>
 
-          {/* Motion score */}
           <div className="col-span-2 md:col-span-4">
             <div className="flex items-center justify-between mb-2">
               <label className="section-label">Min motion</label>

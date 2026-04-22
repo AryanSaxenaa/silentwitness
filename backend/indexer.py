@@ -2,23 +2,37 @@
 Indexer: extracts frames from video, embeds with CLIP, upserts to VectorAI DB.
 Motion-gated: only frames with significant activity are indexed.
 """
+
+import logging
 import os
 import uuid
-import logging
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
 from sentence_transformers import SentenceTransformer
-from actian_vectorai.models import PointStruct
+
+try:
+    from actian_vectorai import PointStruct
+except ImportError:
+    from actian_vectorai.models import PointStruct
+
+try:
+    from actian_vectorai import Field, FilterBuilder
+except ImportError:
+    from actian_vectorai.models import Field, FilterBuilder
 
 from config import (
-    CLIP_MODEL, CLIP_DIM, COLLECTION_NAME,
-    THUMBNAILS_DIR, FRAME_RATE, FOOTAGE_DIR
+    CLIP_DIM,
+    CLIP_MODEL,
+    COLLECTION_NAME,
+    FOOTAGE_DIR,
+    FRAME_RATE,
+    THUMBNAILS_DIR,
 )
-from db import get_client, ensure_collection
+from db import ensure_collection, get_client
 from motion import extract_motion_frames
 
 logger = logging.getLogger(__name__)
@@ -51,7 +65,9 @@ def embed_text(text: str) -> list[float]:
     return embedding.tolist()
 
 
-def save_thumbnail(frame_bgr: np.ndarray, frame_id: str, size: tuple = (320, 180)) -> str:
+def save_thumbnail(
+    frame_bgr: np.ndarray, frame_id: str, size: tuple = (320, 180)
+) -> str:
     """Save a JPEG thumbnail and return its relative path."""
     thumb_path = os.path.join(THUMBNAILS_DIR, f"{frame_id}.jpg")
     resized = cv2.resize(frame_bgr, size, interpolation=cv2.INTER_AREA)
@@ -66,10 +82,11 @@ def parse_recording_start(filename: str) -> datetime | None:
     Falls back to file modification time.
     """
     import re
+
     stem = Path(filename).stem
 
     # Try YYYYMMDD_HHMMSS
-    match = re.search(r'(\d{8})_(\d{6})', stem)
+    match = re.search(r"(\d{8})_(\d{6})", stem)
     if match:
         try:
             return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
@@ -77,7 +94,7 @@ def parse_recording_start(filename: str) -> datetime | None:
             pass
 
     # Try ISO format
-    match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', stem)
+    match = re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})", stem)
     if match:
         try:
             return datetime.fromisoformat(match.group(1))
@@ -90,7 +107,10 @@ def parse_recording_start(filename: str) -> datetime | None:
 def extract_camera_id(filename: str) -> str:
     """Extract camera ID from filename like cam1_, camera_2_, ch01_, etc."""
     import re
-    match = re.search(r'(?:cam|camera|ch|channel)[_-]?(\d+)', Path(filename).stem, re.IGNORECASE)
+
+    match = re.search(
+        r"(?:cam|camera|ch|channel)[_-]?(\d+)", Path(filename).stem, re.IGNORECASE
+    )
     if match:
         return f"cam{match.group(1)}"
     return "cam1"  # default
@@ -111,16 +131,27 @@ def index_video(
     """
     filename = os.path.basename(video_path)
     camera_id = camera_id or extract_camera_id(filename)
-    recording_start = recording_start or parse_recording_start(filename) or datetime.now()
+    recording_start = (
+        recording_start or parse_recording_start(filename) or datetime.now()
+    )
 
     client = get_client()
     ensure_collection(client)
+
+    # Re-indexing the same file should refresh its vectors, not create duplicates.
+    delete_filter = FilterBuilder().must(Field("video_file").eq(filename)).build()
+    try:
+        client.points.delete(COLLECTION_NAME, filter=delete_filter, strict=False)
+    except Exception as exc:
+        logger.warning("Failed to clear existing points for %s: %s", filename, exc)
 
     points_batch = []
     total_frames = 0
     indexed_frames = 0
 
-    logger.info(f"Starting indexing: {filename} | camera={camera_id} | fps={fps_sample}")
+    logger.info(
+        f"Starting indexing: {filename} | camera={camera_id} | fps={fps_sample}"
+    )
 
     for sampled_idx, timestamp_sec, frame_bgr, motion_score in extract_motion_frames(
         video_path, fps_sample=fps_sample

@@ -22,28 +22,28 @@ export default function FrameModal({ frame, onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(8,12,20,0.92)', backdropFilter: 'blur(12px)' }}
+      style={{ background: 'rgba(2,22,48,0.92)', backdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
         className="w-full max-w-2xl animate-fade-up"
         style={{
           background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: '16px',
+          border: '1px solid var(--border-hover)',
+          borderRadius: '22px',
           overflow: 'hidden',
           boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(18px)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-3">
             <Camera size={14} style={{ color: 'var(--accent)' }} />
             <span className="font-mono text-sm font-medium" style={{ color: 'var(--accent)' }}>
               {frame.camera_id}
             </span>
-            <span style={{ color: 'var(--border)' }}>·</span>
+            <span style={{ color: 'var(--border-hover)' }}>·</span>
             <span className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
               {frame.video_file}
             </span>
@@ -57,7 +57,6 @@ export default function FrameModal({ frame, onClose }) {
           </button>
         </div>
 
-        {/* Image */}
         <div style={{ aspectRatio: '16/9', background: 'var(--bg-base)' }}>
           {thumb
             ? <img src={thumb} alt="Selected frame" className="w-full h-full object-contain" />
@@ -67,7 +66,6 @@ export default function FrameModal({ frame, onClose }) {
           }
         </div>
 
-        {/* Stats strip — supermemory style */}
         <div className="grid grid-cols-4" style={{ borderTop: '1px solid var(--border)' }}>
           {[
             { label: 'Match score', value: `${pct}%`, accent: pct >= 70 },
@@ -83,7 +81,7 @@ export default function FrameModal({ frame, onClose }) {
               <div
                 className="font-semibold mb-1"
                 style={{
-                  color: accent ? '#6EE7B7' : 'var(--text-primary)',
+                  color: accent ? 'var(--accent-soft)' : 'var(--text-primary)',
                   fontSize: small ? '12px' : '16px',
                   fontFamily: mono ? 'var(--mono)' : undefined,
                 }}
@@ -95,7 +93,6 @@ export default function FrameModal({ frame, onClose }) {
           ))}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-3" style={{ background: 'var(--bg-subtle)', borderTop: '1px solid var(--border)' }}>
           <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
             Jump to <span style={{ color: 'var(--text-secondary)' }}>{frame.timestamp_sec}s</span> in{' '}

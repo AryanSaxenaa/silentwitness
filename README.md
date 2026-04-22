@@ -1,489 +1,300 @@
 # SilentWitness
 
-**Offline, privacy-first semantic search engine for security footage.**
+Offline, privacy-first semantic search for security footage.
 
-> *Your footage never leaves the building. Search hours of security video in plain English — no scrubbing, no annotations, no cloud.*
+> Your footage never leaves the building. Search video in plain English, jump to the right moment, and stay fully local.
 
-Built for the [Actian VectorAI DB Build Challenge](https://dorahacks.io/hackathon/2097/detail) · April 2026
+Built with [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-db-beta), CLIP, Whisper, FastAPI, React, and Docker.
 
----
+## What It Does
 
-## Table of Contents
+SilentWitness turns CCTV-style footage into a searchable local investigation tool.
 
-1. [Overview](#overview)
-2. [The Problem](#the-problem)
-3. [Solution](#solution)
-4. [Key Features](#key-features)
-5. [How It Works](#how-it-works)
-6. [Why Actian VectorAI DB](#why-actian-vectorai-db)
-7. [Architecture](#architecture)
-8. [Project Structure](#project-structure)
-9. [Getting Started](#getting-started)
-10. [Development Setup](#development-setup)
-11. [API Reference](#api-reference)
-12. [Demo Script](#demo-script)
-13. [Bonus Points](#bonus-points)
-14. [Tech Stack](#tech-stack)
+Instead of manually scrubbing through video, you can ask:
 
----
+- `person entering store`
+- `person near shelves`
+- `two people in frame`
+- `person walking in the store`
 
-## Overview
+The app returns ranked moments, groups nearby frames into events, shows thumbnails and timestamps, and lets you pivot into visually similar frames from any result.
 
-SilentWitness is a locally-deployed AI application that enables natural language search over security camera footage. Instead of manually scrubbing through hours of video to find a specific incident, an operator describes what they are looking for in plain English and the system returns the exact frames — ranked by semantic relevance, grouped into incident events, and filterable by camera, date, time of day, and motion intensity.
+Everything runs on-device:
 
-The entire system runs on-device. No footage is uploaded to any external server. No API keys are required. No internet connection is needed after the initial setup. The system can run on a laptop, a Raspberry Pi 5, an ARM industrial PC, or any air-gapped environment.
+- vector storage and search in Actian VectorAI DB
+- local CLIP embeddings for text-to-frame retrieval
+- local Whisper transcription for voice queries
+- no cloud dependency during indexing or search
 
----
+## Why This Exists
 
-## The Problem
+Reviewing security footage is still mostly manual. Even when the footage exists, finding the useful moment is slow:
 
-Security footage is one of the most valuable and most underutilised sources of evidence and operational intelligence available to businesses, institutions, and law enforcement. The reason it goes underutilised is simple: finding anything in it is painful.
+- operators scrub through long recordings by hand
+- most footage is not tagged or annotated
+- cloud tools introduce privacy, compliance, and data ownership concerns
+- enterprise VMS search products are expensive and heavy for smaller teams
 
-**The current workflow:**
-- An incident is reported
-- An operator is assigned to review footage
-- The operator selects the relevant camera(s) and time range
-- The operator scrubs through video manually, second by second
-- An average retail store with 8 cameras recording 12 hours per day generates 96 hours of footage daily — finding one incident takes 30–60 minutes on average
+SilentWitness is a simpler alternative: local semantic retrieval over recorded footage with no external video upload.
 
-**Why existing solutions fail:**
-- Cloud-based AI tools (e.g. AWS Rekognition, Google Video Intelligence) require uploading sensitive footage to third-party servers, creating legal, compliance, and privacy risks
-- On-premises enterprise systems (e.g. Milestone, Genetec) cost tens of thousands of dollars and require dedicated server infrastructure
-- Keyword or metadata search only works if footage has been manually tagged or annotated — which virtually no one does
+## Core Capabilities
 
-**The gap:** There is no accessible, affordable, privacy-respecting tool that lets a small business owner, warehouse manager, school administrator, or security analyst simply describe what they are looking for and find it instantly.
+- Natural-language video search
+  Search indexed footage with plain English queries.
 
----
+- Event clustering
+  Nearby frames are grouped into incident-like result clusters instead of being shown only as isolated hits.
 
-## Solution
+- Visual similarity search
+  Click a frame and search for visually similar moments using the stored frame vector directly.
 
-SilentWitness addresses this gap by combining three technologies:
+- Activity timeline
+  Browse indexed activity by time window and jump straight into interesting periods.
 
-1. **CLIP multimodal embeddings** — OpenAI's Contrastive Language–Image Pretraining model encodes both images and text into the same 512-dimensional vector space. This means a text query like *"person leaving a bag near the counter"* and a video frame showing exactly that will have similar vector representations — enabling cross-modal search with no manual annotation required.
+- Metadata filters
+  Narrow search by camera, date, hour range, and minimum motion score.
 
-2. **Actian VectorAI DB** — A portable, edge-first vector database that runs entirely on-device. It stores the CLIP embeddings for every indexed frame alongside structured metadata (camera ID, timestamp, motion score, date), executes sub-15ms similarity searches, and supports a rich Filter DSL for scoping queries before vector comparison runs.
+- Voice search
+  Record a spoken query and run the same retrieval pipeline locally through Whisper.
 
-3. **Motion-gated indexing** — Rather than embedding every frame (which would be computationally prohibitive), SilentWitness uses OpenCV frame differencing to detect motion and only embeds frames where significant activity occurred. This reduces the indexing workload by 80–95% on typical footage and produces a cleaner, more signal-rich index.
-
-The result is a system that can index an hour of footage in approximately 3–5 minutes on modest hardware and return search results in under a second.
-
----
-
-## Key Features
-
-### Core Search
-- **Natural language queries** — describe incidents in plain English; no special syntax required
-- **Cross-modal search** — text queries match video frames directly via CLIP embeddings; no image captioning or manual tagging
-- **Event clustering** — consecutive frames within a configurable time window are grouped into incidents, so results surface events rather than isolated frames
-- **DBSF score fusion** — Distribution-Based Score Fusion combines the CLIP semantic similarity score with the motion activity score of each frame, boosting frames that are both semantically relevant and visually active
-
-### Voice Search
-- **Local speech-to-text** — powered by OpenAI Whisper `tiny` model running entirely on-device; no cloud transcription service
-- **Seamless integration** — voice input feeds directly into the same search pipeline as text input; the transcribed query is displayed for confirmation
-- **Demo-ready** — the combination of pulling an ethernet cable and speaking a query that produces results is the single most compelling live demonstration of the offline capability
-
-### Live Webcam Feed
-- **Real-time indexing** — a background thread continuously captures frames from a webcam or RTSP stream and indexes them as they are captured; new frames are searchable within seconds
-- **Motion-gated capture** — idle frames (empty rooms, static scenes) are discarded before embedding; only frames with detected activity are indexed
-- **Bounded memory** — a fixed-size frame queue prevents memory growth under high-motion conditions; excess frames are dropped and counted
-- **Multi-source support** — accepts a webcam device index (`0`, `1`), an RTSP URL, or any OpenCV-compatible video source
-
-### Incident Timeline
-- **Activity heatmap** — a horizontal bar chart showing frame density and peak motion score bucketed into 5-minute windows across the day
-- **Interactive navigation** — hovering a time bucket displays thumbnail previews of frames from that period; clicking it executes a filtered search scoped to that time window
-- **Visual anomaly detection** — high-motion spikes are colour-coded red, making unusual activity periods immediately identifiable without any search query
-
-### Frame Similarity Search
-- **Vector-native** — clicking "Find similar moments" on any result frame fetches the stored CLIP vector for that frame directly from VectorAI DB and uses it as the search query; no re-embedding, no text query
-- **Temporal tracking** — finds every occurrence of a visually similar scene, person, or object across all indexed footage and cameras
-- **Same pipeline** — results go through the same DBSF fusion and event clustering as text searches
-
-### Filtering
-- **Camera scope** — restrict results to a specific camera ID
-- **Date filter** — limit search to a specific recording date
-- **Time window** — specify an hour range (e.g. 10:00–14:00)
-- **Motion threshold** — set a minimum motion score to exclude low-activity frames from results
-- **Filter DSL** — all filters are applied server-side inside VectorAI DB before vector comparison runs, not as post-processing; this means the search operates only on the relevant subset of the index
-
----
+- Live feed mode
+  Start a webcam or RTSP source and index motion-gated frames in near real time.
 
 ## How It Works
 
-### Indexing Pipeline
+### Indexing
 
-```
-Video file (MP4, AVI, MKV, MOV, TS)
-           │
-           ▼
-   Frame sampling at 1 fps (configurable)
-           │
-           ▼
-   Motion detection — OpenCV frame differencing
-   Computes pixel-level difference between consecutive frames.
-   Frames below the motion threshold are discarded.
-   Typical rejection rate: 80–95% of frames on standard footage.
-           │
-           ▼
-   CLIP ViT-B/32 embedding — sentence-transformers (local)
-   Each motion frame is converted to a 512-dimensional vector
-   capturing its visual semantic content.
-           │
-           ▼
-   Thumbnail generation — saved as JPEG at 320×180px
-           │
-           ▼
-   Metadata extraction
-   - camera_id (parsed from filename or provided manually)
-   - timestamp_sec (position in video)
-   - absolute_time (derived from filename or file modification time)
-   - date, hour (for Filter DSL)
-   - motion_score (0.0–1.0)
-           │
-           ▼
-   Actian VectorAI DB — real-time upsert via gRPC
-   HNSW index updated immediately; frame is searchable at once.
-   Batch size: 32 frames per upsert call.
-```
+1. Sample frames from a video at a configurable rate.
+2. Use OpenCV frame differencing to keep only motion-relevant frames.
+3. Generate CLIP embeddings for the remaining frames.
+4. Save thumbnails and metadata such as camera ID, timestamp, date, hour, and motion score.
+5. Upsert vectors plus payload into Actian VectorAI DB.
 
-### Search Pipeline
+### Search
 
-```
-User input: text query or voice recording
-           │
-           ▼
-   [Voice path] Whisper tiny — local transcription
-   Audio bytes → text string
-           │
-           ▼
-   CLIP ViT-B/32 text embedding
-   Query text is encoded into the same 512-dimensional space as frames.
-   This is what enables cross-modal search without any bridge model.
-           │
-           ▼
-   Filter DSL construction
-   Active filters (camera, date, hour range, motion score) are compiled
-   into a VectorAI DB filter expression. This runs server-side and
-   reduces the candidate set before vector comparison.
-           │
-           ▼
-   Actian VectorAI DB — HNSW vector search
-   Cosine similarity search over the filtered candidate set.
-   Typical latency: <15ms for collections up to ~500k frames.
-           │
-           ▼
-   DBSF score fusion
-   final_score = (clip_score × 0.85) + (motion_score × 0.15)
-   Re-ranks results to boost frames that are both semantically
-   relevant and visually active.
-           │
-           ▼
-   Event clustering
-   Results sorted by timestamp. Consecutive frames within 10 seconds
-   of each other are grouped into a single incident event.
-   Each event reports: start/end time, frame count, best-match frame.
-           │
-           ▼
-   Response — events array + raw frames array
-```
+1. Convert the text query into a CLIP text embedding.
+2. Build optional metadata filters for camera, date, hour, and motion threshold.
+3. Run vector search in Actian VectorAI DB.
+4. Apply a lightweight motion-aware score fusion step to balance semantic relevance with scene activity.
+5. Cluster nearby hits into event-style results.
 
-### Live Feed Pipeline
+### Similarity Search
 
-```
-Webcam / RTSP stream
-           │
-           ▼
-   Capture thread — reads frames at configurable fps
-           │
-           ▼
-   Motion gate — frame differencing against previous frame
-   Frames below motion threshold are discarded immediately.
-           │
-           ▼
-   Bounded queue (max 10 frames) — decouples capture from embedding
-           │
-           ▼
-   Index thread — pulls from queue
-   CLIP embed → thumbnail save → VectorAI DB upsert (single point)
-   New frame is searchable within ~2–5 seconds of capture.
-```
+1. Fetch the stored vector for an indexed frame.
+2. Use that vector as the query.
+3. Return visually similar moments from the indexed footage.
 
----
+## Why Actian VectorAI DB Matters Here
 
-## Why Actian VectorAI DB
+Actian VectorAI DB is central to the project, not a replaceable detail.
 
-Actian VectorAI DB is not a drop-in replacement for another vector database in this project — it is the reason the project's core value proposition is possible. Each of the following capabilities is used directly and intentionally.
+- It stores the CLIP embeddings and structured frame metadata together.
+- It powers low-latency semantic search over indexed footage.
+- It supports server-side filtering before search results are returned.
+- It works locally in Docker, which is critical to the privacy story.
+- It supports the same app architecture across laptop-style local deployment and edge-style deployment.
 
-| Capability | How SilentWitness uses it | Why it matters |
-|---|---|---|
-| **CLIP multimodal embeddings** | Frames and text queries are embedded into the same cosine space; search operates across modalities without a bridge model | This is the entire mechanism by which text retrieves images — without it, the product does not exist |
-| **HNSW index with sub-15ms latency** | Interactive search — results appear in under a second even on large collections | Makes the product feel like search, not a batch job |
-| **Filter DSL** | Camera, date, hour, and motion score filters are applied server-side before vector comparison; supports `.eq()`, `.gte()`, `.lte()`, `.between()`, and `.must()` chaining | Scoping search to a camera and time window before running HNSW dramatically reduces result noise and improves precision |
-| **Real-time indexing** | New frames are upserted individually as they are captured; no batch re-index required | Live feed mode is only viable because newly indexed frames are immediately searchable |
-| **Edge and offline deployment** | Entire stack runs in Docker on a laptop, Raspberry Pi 5, or ARM industrial PC with no internet connection | The privacy guarantee — footage never leaves the device — is structurally enforced, not just a policy claim |
-| **ARM64 Docker image** | Tested on Apple Silicon (M1/M2/M3) and compatible with Raspberry Pi CM4 and AWS Graviton | Enables deployment on energy-efficient edge hardware colocated with cameras |
-| **VDE snapshots** | The indexed frame collection can be snapshotted and restored; a baseline index can be distributed to a new machine via USB | Enables portable deployment — bring the DB to a new site without re-indexing all footage |
-| **gRPC transport** | All SDK calls use gRPC; the Python client handles serialisation transparently | Low-overhead communication between backend and DB on the same host; critical for live feed throughput |
-
----
+For this project, VectorAI DB is the retrieval layer that makes plain-English investigation practical on-device.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         User's Machine                          │
-│                                                                 │
-│  ┌──────────────┐     ┌──────────────────┐     ┌────────────┐  │
-│  │   Browser    │────▶│  React Frontend  │     │  Webcam /  │  │
-│  │  :3000       │◀────│  Vite + Tailwind │     │  RTSP feed │  │
-│  └──────────────┘     └────────┬─────────┘     └─────┬──────┘  │
-│                                │ HTTP                 │         │
-│                                ▼                      │         │
-│                       ┌────────────────┐              │         │
-│                       │ FastAPI Backend│◀─────────────┘         │
-│                       │   :8000        │  live.py capture       │
-│                       │                │  thread                │
-│                       │  main.py       │                        │
-│                       │  indexer.py    │  ┌──────────────────┐  │
-│                       │  searcher.py   │  │  CLIP ViT-B/32   │  │
-│                       │  voice.py      │  │  (sentence-      │  │
-│                       │  live.py       │  │   transformers)  │  │
-│                       │  motion.py     │  │  512-dim embed   │  │
-│                       └───────┬────────┘  └──────────────────┘  │
-│                               │ gRPC :50051                     │
-│                               ▼                                 │
-│                       ┌────────────────┐                        │
-│                       │ Actian VectorAI│                        │
-│                       │ DB             │  /data volume          │
-│                       │                │◀──────────────────────┐│
-│                       │  HNSW index    │  persistent frames     ││
-│                       │  Filter DSL    │  + metadata            ││
-│                       │  DBSF fusion   │                        ││
-│                       └────────────────┘                        │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │ footage/   data/thumbnails/   data/vectorai/            │   │
-│  │ (video files)  (JPEG thumbs)  (VectorAI DB persistent)  │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-│  Zero network egress. No external API calls.                    │
-└─────────────────────────────────────────────────────────────────┘
-```
+```text
+Browser UI
+   |
+   v
+React + Vite frontend (:3000)
+   |
+   v
+FastAPI backend (:8000)
+   |
+   +--> CLIP embeddings
+   +--> Whisper transcription
+   +--> OpenCV motion detection
+   |
+   v
+Actian VectorAI DB (:50051)
 
----
+Local volumes:
+- footage/           input videos
+- data/index/        thumbnails and local artifacts
+- data/vectorai/     VectorAI DB data
+```
 
 ## Project Structure
 
-```
+```text
 silentwitness/
-│
-├── docker-compose.yml              # Orchestrates VectorAI DB, backend, frontend
-├── .env.example                    # Environment variable reference
-├── .gitignore
-│
 ├── backend/
-│   ├── Dockerfile                  # Python 3.11-slim + ffmpeg + pre-downloaded models
-│   ├── requirements.txt            # Python dependencies
-│   ├── config.py                   # Environment config + directory setup
-│   ├── db.py                       # VectorAI DB client, collection creation, stats
-│   ├── motion.py                   # OpenCV motion detection, frame differencing
-│   ├── indexer.py                  # CLIP embedding pipeline, batch upsert, thumbnails
-│   ├── searcher.py                 # Search pipeline, Filter DSL, DBSF fusion, event clustering
-│   ├── searcher_similarity.py      # Frame-to-frame similarity search
-│   ├── voice.py                    # Whisper tiny local transcription
-│   ├── live.py                     # Live webcam/RTSP indexing, background threads
-│   └── main.py                     # FastAPI application, all API routes
-│
+│   ├── config.py
+│   ├── db.py
+│   ├── indexer.py
+│   ├── live.py
+│   ├── main.py
+│   ├── motion.py
+│   ├── searcher.py
+│   ├── searcher_similarity.py
+│   └── voice.py
 ├── frontend/
-│   ├── Dockerfile                  # Node 20 build + nginx serving
-│   ├── nginx.conf                  # SPA routing + API proxy
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   ├── index.html
-│   └── src/
-│       ├── main.jsx                # React entry point
-│       ├── index.css               # Design system (CSS custom properties)
-│       ├── App.jsx                 # Application shell, routing, state management
-│       ├── api.js                  # Axios API client
-│       └── components/
-│           ├── SearchBar.jsx       # Text input + voice button + example queries
-│           ├── VoiceButton.jsx     # MediaRecorder, Whisper API integration
-│           ├── FilterPanel.jsx     # Camera / date / hour / motion filters
-│           ├── ResultsGrid.jsx     # Bento event cards + frame grid + stats strip
-│           ├── FrameModal.jsx      # Frame detail modal with metadata
-│           ├── Timeline.jsx        # Activity heatmap visualisation
-│           ├── IndexPanel.jsx      # Video upload + folder scan + job status
-│           ├── LiveFeedPanel.jsx   # Live feed start/stop + counters
-│           └── StatusBar.jsx       # DB connection status + frame count
-│
-└── scripts/
-    └── generate_demo.py            # Synthetic demo video generator (no camera needed)
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── api.js
+│   │   └── components/
+│   ├── Dockerfile
+│   └── nginx.conf
+├── footage/
+├── data/
+├── scripts/
+│   └── generate_demo.py
+└── docker-compose.yml
 ```
-
----
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose plugin)
-- The Actian VectorAI DB Python SDK `.whl` file from the [beta repository](https://github.com/hackmamba-io/actian-vectorAI-db-beta) — download `actian_vectorai-0.1.0b2-py3-none-any.whl` and place it in `backend/`
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Docker Engine with Compose
 
-### Step 1 — Clone the repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/AryanSaxenaa/silentwitness.git
 cd silentwitness
 ```
 
-### Step 2 — Add the VectorAI DB SDK
+### 2. Add footage
 
-Download the wheel file from the [beta repo](https://github.com/hackmamba-io/actian-vectorAI-db-beta) and copy it into the backend directory:
+Put supported video files into `footage/`.
 
-```bash
-cp actian_vectorai-0.1.0b2-py3-none-any.whl backend/
+Supported formats:
+
+- `.mp4`
+- `.avi`
+- `.mkv`
+- `.mov`
+- `.m4v`
+- `.ts`
+
+Recommended naming format:
+
+```text
+cam2_store_20260422_190000.mp4
+cam3_street_20260422_190100.mp4
 ```
 
-Update `backend/requirements.txt` to reference the local file, or install it directly:
+This helps the app infer camera and recording time more cleanly.
 
-```bash
-pip install backend/actian_vectorai-0.1.0b2-py3-none-any.whl
-```
-
-### Step 3 — Configure environment
-
-```bash
-cp .env.example .env
-mkdir -p footage data
-```
-
-The defaults work out of the box. Edit `.env` only if you need to change ports or directories.
-
-### Step 4 — Add footage
-
-Drop any `.mp4`, `.avi`, `.mkv`, `.mov`, or `.ts` files into the `footage/` directory.
-
-**No footage available? Generate a synthetic demo video:**
+If you do not have footage yet, generate a local demo clip:
 
 ```bash
 pip install opencv-python numpy
 python scripts/generate_demo.py
 ```
 
-This creates `footage/cam1_20260413_100000.mp4` — a 3-minute synthetic video with six labelled events (person entering, bag left unattended, two people talking, person running, car parked, suspicious activity near exit) at known timestamps. It is designed to validate every search feature without requiring a real camera.
-
-### Step 5 — Start the stack
+### 3. Start the stack
 
 ```bash
-docker compose up
+docker compose build
+docker compose up -d
 ```
 
-Docker Compose starts three services:
+Services:
 
-| Service | Port | Description |
-|---|---|---|
-| `vectoraidb` | 50051 | Actian VectorAI DB (gRPC) |
-| `backend` | 8000 | FastAPI + indexing + search |
-| `frontend` | 3000 | React application |
+- `frontend` on `http://localhost:3000`
+- `backend` on `http://localhost:8000`
+- `vectoraidb` on `localhost:50051`
 
-The backend Docker image pre-downloads the CLIP ViT-B/32 and Whisper tiny models at build time so the first request is instant.
+Note:
 
-### Step 6 — Index footage
+- the first backend build is slow because it preloads models
+- after that, normal restarts are much faster
+- after a fresh backend start, give it a short warm-up window before the first search
 
-Open [http://localhost:3000](http://localhost:3000) in a browser.
+### 4. Index footage
 
-Click **Index** in the top-right navigation → **Scan footage folder**. The backend will scan the `footage/` directory, extract motion frames, embed them with CLIP, and upsert them to VectorAI DB. Progress is visible in the indexing jobs panel.
+Open `http://localhost:3000`, click `Index`, then click `Scan footage folder`.
 
-Alternatively, trigger indexing directly via the API:
+You can also trigger indexing through the API:
 
 ```bash
-# Scan all videos in footage/
 curl -X POST http://localhost:8000/api/index/scan
-
-# Monitor progress
 curl http://localhost:8000/api/index/jobs
 ```
 
-### Step 7 — Search
+### 5. Search
 
-Type any description into the search bar. Results appear grouped into incident events with thumbnails, timestamps, and match scores.
+Try queries like:
 
-To test voice search, click the microphone icon and speak your query. Whisper transcribes it locally and the search runs automatically.
+- `person entering store`
+- `person near shelves`
+- `person walking in the store`
+- `two people in frame`
 
----
+Then click a result and use `Find similar moments`.
 
-## Development Setup
+## Demo Flow
 
-To run the backend and frontend individually without Docker:
+This is the cleanest current live demo flow for a store CCTV-style clip.
 
-### Backend
+### Suggested sequence
 
-```bash
-cd backend
+1. Show the status bar and confirm the system is local.
+2. Open `Index` and show that footage was indexed into Actian VectorAI DB.
+3. Search `person entering store`.
+4. Search `person near shelves`.
+5. Search `two people in frame`.
+6. Open one result and run visually similar search.
+7. Show the timeline and jump to an active window.
 
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+### Suggested narration
 
-# Install dependencies
-pip install -r requirements.txt
-pip install actian_vectorai-0.1.0b2-py3-none-any.whl
-
-# Start VectorAI DB via Docker (required)
-docker run -d --name vectoraidb \
-  -v $(pwd)/../data/vectorai:/data \
-  -p 50051:50051 \
-  williamimoh/actian-vectorai-db:latest
-
-# Start the backend
-uvicorn main:app --reload --port 8000
-```
-
-The API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI) after starting the backend.
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-# Available at http://localhost:3000
-```
-
----
+“SilentWitness is a local semantic search tool for security footage. I indexed this store video into Actian VectorAI DB, and now I can search for events like `person entering store` or `person near shelves` in plain English. The system returns clustered moments with timestamps, and I can pivot from any frame into visually similar moments. Everything here runs locally without sending footage to the cloud.”
 
 ## API Reference
 
+### Health
+
+`GET /health`
+
+Basic service health check.
+
+### Status
+
+`GET /api/status`
+
+Returns:
+
+- DB connection state
+- collection stats
+- indexed camera IDs
+
 ### Search
 
-#### `POST /api/search`
+`POST /api/search`
 
-Execute a semantic search query over indexed footage.
-
-**Request body:**
+Example body:
 
 ```json
 {
-  "query": "person leaving a bag near the counter",
-  "camera_id": "cam1",
-  "date": "2026-04-13",
-  "hour_start": 10,
-  "hour_end": 14,
+  "query": "person near shelves",
+  "camera_id": "cam2",
+  "date": "2026-04-22",
+  "hour_start": 19,
+  "hour_end": 20,
   "min_motion_score": 0.05,
   "limit": 20,
   "group_into_events": true
 }
 ```
 
-All fields except `query` are optional. `group_into_events: true` returns results clustered into incident events; `false` returns raw ranked frames.
+`GET /api/search?q=person%20near%20shelves`
 
-#### `GET /api/search?q=<query>`
+Convenience GET form for quick testing.
 
-Convenience endpoint for quick testing from a browser or curl.
+### Similarity Search
 
-#### `POST /api/search/similar`
+`POST /api/search/similar`
 
-Find frames visually similar to an existing indexed frame, using its stored CLIP vector directly.
+Example body:
 
 ```json
 {
@@ -493,127 +304,92 @@ Find frames visually similar to an existing indexed frame, using its stored CLIP
 }
 ```
 
-### Voice
+### Voice Search
 
-#### `POST /api/voice`
+`POST /api/voice`
 
-Accepts a multipart audio upload (WebM, WAV, MP3, OGG). Transcribes with Whisper locally, then executes a semantic search. Returns `transcribed_query` alongside the standard search response.
+Multipart audio upload. Whisper transcribes locally, then the backend runs search with the transcribed text.
 
 ### Indexing
 
-#### `POST /api/index/scan`
+`POST /api/index/scan`
 
-Scans the `footage/` directory and queues all supported video files for indexing as background tasks.
+Queue all supported files in `footage/` for indexing.
 
-#### `POST /api/index/upload`
+`POST /api/index/upload`
 
-Accepts a multipart video file upload. Saves to `footage/` and queues for indexing.
+Upload a video file directly and queue it for indexing.
 
-#### `GET /api/index/jobs`
+`GET /api/index/jobs`
 
-Returns the status of all indexing jobs, including frame counts and errors.
+Return indexing job state.
+
+### Timeline
+
+`GET /api/timeline`
+
+Returns activity buckets for the indexed footage.
 
 ### Live Feed
 
-#### `POST /api/live/start`
+`POST /api/live/start`
 
-```json
-{
-  "source": "0",
-  "camera_id": "live",
-  "fps_sample": 1.0,
-  "min_motion_score": 0.01
-}
+Start indexing a webcam or RTSP source.
+
+`POST /api/live/stop`
+
+Stop a live source.
+
+`GET /api/live/status`
+
+Return current live indexing state.
+
+## Development
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run build
 ```
 
-Starts a background thread that captures from the specified source and indexes frames in real time. `source` accepts a webcam index (`"0"`, `"1"`) or an RTSP URL.
+### Backend
 
-#### `POST /api/live/stop?camera_id=live`
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
 
-Stops the live feed indexer for the specified camera.
+You still need VectorAI DB running separately for backend development.
 
-#### `GET /api/live/status`
+## Notes
 
-Returns frame counts, drop counts, and error status for all active live feeds.
-
-### Utilities
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/status` | GET | DB connection status, frame count, camera list |
-| `/api/cameras` | GET | All camera IDs present in the index |
-| `/api/footage` | GET | Video files in the footage directory |
-| `/api/timeline` | GET | Activity heatmap data bucketed by time |
-| `/thumbnails/{id}.jpg` | GET | Serve a frame thumbnail by frame ID |
-| `/health` | GET | Service health check |
-
----
-
-## Demo Script
-
-The following sequence is designed to demonstrate every judging criterion in under five minutes.
-
-**Setup (before demo):**
-1. Start `docker compose up`
-2. Generate and index the synthetic demo video
-3. Confirm the status bar shows a frame count > 0
-
-**Live demonstration:**
-
-1. Open [http://localhost:3000](http://localhost:3000) and show the hero screen — note the stats: `<15ms` latency, `100%` offline, `0` bytes sent
-2. Click **Index** → **Scan footage folder** — briefly show the indexing job progress updating in real time (demonstrating VectorAI DB real-time indexing)
-3. **Disconnect from the internet** — pull the ethernet cable or enable airplane mode
-4. Click the microphone icon, speak: *"someone leaving a bag near the counter"* — show Whisper transcribing locally; results appear
-5. Show the incident timeline heatmap — hover a peak bar to preview thumbnails from that time window
-6. Click **Find similar moments** on the top result — show VectorAI DB returning visually similar frames using the stored vector directly
-7. Apply filters: Camera = `cam1`, Time = `10:00–12:00`, watch results update instantly (demonstrating Filter DSL)
-8. Open the browser network inspector — show zero requests to any external host
-9. Click **Live** in the navigation — start live webcam indexing; show the frame counter incrementing in real time; run a voice query; show the live frame appearing in results
-10. Final statement: *"Every frame in this demo was processed, stored, and searched entirely on this machine. The footage never left the building."*
-
----
-
-## Bonus Points
-
-The following bonus criteria from the hackathon judging rubric are all satisfied by the core architecture — they are not bolt-on features.
-
-- [x] **Deployed locally without cloud dependency** — the entire stack (VectorAI DB, CLIP inference, Whisper transcription, FastAPI, React) runs in Docker containers with no external service calls after initial image pull
-- [x] **Works offline** — no internet connection is required for indexing, searching, voice transcription, or live feed operation; all models are pre-downloaded at Docker build time
-- [x] **Runs on ARM** — the VectorAI DB Docker image supports `linux/arm64`; the backend runs on Python 3.11 which is available for ARM; tested on Apple Silicon (M1/M2/M3) and compatible with Raspberry Pi 5 and AWS Graviton
-
----
+- This project uses motion-gated frame indexing rather than embedding every frame.
+- The current reranking step is a custom motion-aware fusion over semantic similarity plus motion score.
+- The app is designed for local use first, with Docker-based deployment as the default path.
+- If you place files directly into `footage/`, prefer `Scan footage folder` rather than upload.
 
 ## Tech Stack
 
-| Component | Technology | Version |
-|---|---|---|
-| Vector database | [Actian VectorAI DB](https://www.actian.com/databases/vectorai-db/) | v1.0.0 (beta) |
-| Python SDK | actian-vectorai | 0.1.0b2 |
-| Multimodal embeddings | [CLIP ViT-B/32](https://huggingface.co/sentence-transformers/clip-ViT-B-32) via sentence-transformers | 512-dim |
-| Speech-to-text | [OpenAI Whisper](https://github.com/openai/whisper) tiny (local) | 20231117 |
-| Motion detection | [OpenCV](https://opencv.org/) | 4.10 |
-| Backend framework | [FastAPI](https://fastapi.tiangolo.com/) | 0.115 |
-| Backend server | [Uvicorn](https://www.uvicorn.org/) | 0.30 |
-| Frontend framework | [React](https://react.dev/) | 18 |
-| Frontend build tool | [Vite](https://vitejs.dev/) | 5 |
-| CSS framework | [Tailwind CSS](https://tailwindcss.com/) | 3 |
-| Containerisation | [Docker](https://www.docker.com/) + Compose | — |
-| Transport protocol | gRPC (via grpcio) | ≥1.70 |
-| Data validation | [Pydantic](https://docs.pydantic.dev/) | ≥2.10 |
+- Actian VectorAI DB
+- Python FastAPI
+- React + Vite
+- OpenCV
+- sentence-transformers CLIP ViT-B/32
+- OpenAI Whisper `tiny`
+- Docker Compose
 
----
+## License
 
-## Environment Variables
+No license file is currently included in this repository.
 
-| Variable | Default | Description |
-|---|---|---|
-| `VECTORAI_HOST` | `localhost` | Hostname of the VectorAI DB container |
-| `VECTORAI_PORT` | `50051` | gRPC port for VectorAI DB |
-| `FOOTAGE_DIR` | `./footage` | Directory containing video files to index |
-| `DATA_DIR` | `./data` | Directory for thumbnails and index data |
-| `FRAME_RATE` | `1` | Frames per second to sample from each video |
-| `MOTION_THRESHOLD` | `25` | Pixel difference threshold for motion detection (0–255); lower values are more sensitive |
+## Acknowledgements
 
----
+- [Actian VectorAI DB beta repo](https://github.com/hackmamba-io/actian-vectorAI-db-beta)
+- [sentence-transformers CLIP ViT-B/32](https://huggingface.co/sentence-transformers/clip-ViT-B-32)
+- [OpenAI Whisper](https://github.com/openai/whisper)
 
-*Built for the [Actian VectorAI DB Build Challenge](https://dorahacks.io/hackathon/2097/detail) · April 2026 · [github.com/AryanSaxenaa/silentwitness](https://github.com/AryanSaxenaa/silentwitness)*

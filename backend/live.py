@@ -8,22 +8,28 @@ RAM strategy (fits 8GB):
 - Frame queue is bounded (max 10 frames) — drops if indexer falls behind
 - Only motion frames hit CLIP — idle camera = zero GPU/CPU load
 """
-import threading
+
 import logging
-import time
 import queue
+import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
 
 import cv2
 import numpy as np
-
 from config import COLLECTION_NAME, THUMBNAILS_DIR
-from db import get_client, ensure_collection
+from db import ensure_collection, get_client
 from indexer import embed_frame, save_thumbnail
 from motion import compute_motion_score
-from actian_vectorai.models import PointStruct
+
+try:
+    # Preferred import path in newer SDK builds
+    from actian_vectorai import PointStruct
+except ImportError:
+    # Backward-compatible fallback for older SDK builds
+    from actian_vectorai.models import PointStruct
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +45,7 @@ class LiveIndexer:
 
     def __init__(
         self,
-        source: int | str = 0,   # 0 = default webcam, or RTSP URL / file path
+        source: int | str = 0,  # 0 = default webcam, or RTSP URL / file path
         camera_id: str = "live",
         fps_sample: float = 1.0,
         min_motion_score: float = 0.01,
@@ -78,7 +84,9 @@ class LiveIndexer:
         )
         self._capture_thread.start()
         self._index_thread.start()
-        logger.info(f"LiveIndexer started: source={self.source}, camera={self.camera_id}")
+        logger.info(
+            f"LiveIndexer started: source={self.source}, camera={self.camera_id}"
+        )
 
     def stop(self):
         self._stop_event.set()
@@ -134,7 +142,9 @@ class LiveIndexer:
                     logger.error(self.error)
                     break
                 backoff = min(reconnect_count * 1.0, 10.0)  # max 10s backoff
-                logger.warning(f"Frame read failed (attempt {reconnect_count}/{self.MAX_RECONNECT_ATTEMPTS}), retrying in {backoff:.0f}s...")
+                logger.warning(
+                    f"Frame read failed (attempt {reconnect_count}/{self.MAX_RECONNECT_ATTEMPTS}), retrying in {backoff:.0f}s..."
+                )
                 time.sleep(backoff)
                 cap.release()
                 cap = cv2.VideoCapture(self.source)
@@ -205,7 +215,9 @@ class LiveIndexer:
                 )
                 client.points.upsert(COLLECTION_NAME, [point])
                 self.frames_indexed += 1
-                logger.debug(f"Live frame indexed: {frame_id} motion={motion_score:.3f}")
+                logger.debug(
+                    f"Live frame indexed: {frame_id} motion={motion_score:.3f}"
+                )
 
             except Exception as e:
                 logger.error(f"Failed to index live frame: {e}")

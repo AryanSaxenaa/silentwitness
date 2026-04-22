@@ -1,5 +1,20 @@
-import { useState, useEffect } from 'react'
-import { Eye, LayoutGrid, List, Settings, X, Radio } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  Eye,
+  LayoutGrid,
+  List,
+  X,
+  Radio,
+  Search,
+  Filter,
+  Shield,
+  Database,
+  TerminalSquare,
+  Bell,
+  ChevronRight,
+  Moon,
+  Sun,
+} from 'lucide-react'
 import SearchBar from './components/SearchBar'
 import FilterPanel from './components/FilterPanel'
 import ResultsGrid from './components/ResultsGrid'
@@ -8,23 +23,8 @@ import IndexPanel from './components/IndexPanel'
 import StatusBar from './components/StatusBar'
 import Timeline from './components/Timeline'
 import LiveFeedPanel from './components/LiveFeedPanel'
-import { searchFootage, searchSimilar } from './api'
+import { getStatus, searchFootage, searchSimilar } from './api'
 
-/* ── Matrix strip background (supermemory number-art) ── */
-function MatrixStrip() {
-  const chars = '0 1 4 9 2 7 3 8 5 6 '.repeat(200)
-  return (
-    <div
-      className="matrix-strip absolute inset-0 opacity-40 select-none pointer-events-none"
-      style={{ fontSize: '11px', lineHeight: '1.8', overflow: 'hidden', letterSpacing: '0.15em' }}
-      aria-hidden
-    >
-      {chars}
-    </div>
-  )
-}
-
-/* ── Section label with bracket notation ── */
 function SectionTag({ index, total, label }) {
   return (
     <div className="flex items-center gap-3 mb-4">
@@ -35,7 +35,6 @@ function SectionTag({ index, total, label }) {
   )
 }
 
-/* ── Loading skeleton ── */
 function Skeleton() {
   return (
     <div className="flex flex-col gap-3">
@@ -57,18 +56,39 @@ function Skeleton() {
   )
 }
 
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export default function App() {
   const [results, setResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [status, setStatus] = useState(null)
   const [viewMode, setViewMode] = useState('events')
   const [selectedFrame, setSelectedFrame] = useState(null)
   const [showIndexPanel, setShowIndexPanel] = useState(false)
   const [showLivePanel, setShowLivePanel] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') return 'dark'
+    return window.localStorage.getItem('silentwitness-theme') || 'dark'
+  })
   const [filters, setFilters] = useState({
     cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null,
   })
+
+  useEffect(() => {
+    const fetchStatus = () => getStatus().then(setStatus).catch(() => setStatus(null))
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('silentwitness-theme', theme)
+  }, [theme])
 
   const handleSearch = async (query) => {
     setLoading(true)
@@ -105,13 +125,9 @@ export default function App() {
 
   const handleTimelineBucketClick = (bucket) => {
     const [dateStr, timeStr] = bucket.time.split('T')
-    const hour = parseInt(timeStr.split(':')[0])
-    // Build the new filters directly and pass them to a one-shot search.
-    // We cannot call setFilters() then handleSearch() consecutively because
-    // React state updates are async — handleSearch would read the stale filters closure.
+    const hour = parseInt(timeStr.split(':')[0], 10)
     const newFilters = { ...filters, date: dateStr, hourStart: hour, hourEnd: hour + 1 }
     setFilters(newFilters)
-    // Kick off search with the explicitly-built filters object
     setLoading(true)
     setError(null)
     setHasSearched(true)
@@ -121,142 +137,211 @@ export default function App() {
       .finally(() => setLoading(false))
   }
 
-  const TOTAL_SECTIONS = showIndexPanel || showLivePanel ? 3 : 2
+  const TOTAL_SECTIONS = 3
+  const indexedFrames = status?.stats?.total_frames ?? 0
+  const indexedCameras = status?.cameras ?? []
+  const dbConnected = status?.db_connected ?? false
+  const statTiles = [
+    { label: 'indexed frames', value: indexedFrames > 0 ? indexedFrames.toLocaleString() : '--', tone: 'primary' },
+    { label: 'active cameras', value: indexedCameras.length ? indexedCameras.length.toString() : '--', tone: 'neutral' },
+    { label: 'retrieval mode', value: viewMode === 'events' ? 'clustered' : 'frame', tone: 'signal' },
+  ]
+  const sideActions = [
+    {
+      id: 'events',
+      label: 'Events',
+      icon: <List size={15} />,
+      active: viewMode === 'events',
+      onClick: () => setViewMode('events'),
+    },
+    {
+      id: 'frames',
+      label: 'Frames',
+      icon: <LayoutGrid size={15} />,
+      active: viewMode === 'frames',
+      onClick: () => setViewMode('frames'),
+    },
+    {
+      id: 'index',
+      label: 'Index',
+      icon: <Database size={15} />,
+      active: showIndexPanel,
+      onClick: () => { setShowIndexPanel(!showIndexPanel); setShowLivePanel(false) },
+    },
+    {
+      id: 'live',
+      label: 'Live',
+      icon: <Radio size={15} />,
+      active: showLivePanel,
+      onClick: () => { setShowLivePanel(!showLivePanel); setShowIndexPanel(false) },
+    },
+  ]
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)' }}>
-
-      {/* ── Nav ── */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 40,
-        background: 'rgba(8,12,20,0.85)',
-        backdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
-          {/* Top row */}
-          <div className="flex items-center justify-between" style={{ height: '56px' }}>
-            {/* Wordmark */}
-            <div className="flex items-center gap-3">
-              <div style={{
-                width: '32px', height: '32px', borderRadius: '9px',
-                background: 'var(--accent-dim)',
-                border: '1px solid rgba(59,130,246,0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Eye size={15} style={{ color: 'var(--accent)' }} />
+    <main className="app-shell">
+      <header className="top-shell">
+        <div className="top-shell__inner">
+          <div className="flex items-center gap-8">
+            <div className="brand-lockup">
+              <div className="brand-mark">
+                <Eye size={16} />
               </div>
               <div>
-                <div style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-                  SilentWitness
-                </div>
-                <div className="section-label" style={{ marginTop: '1px' }}>semantic security search</div>
+                <div className="brand-title">SILENTWITNESS // CORE</div>
+                <div className="brand-subtitle">offline semantic search for surveillance footage</div>
               </div>
             </div>
 
-            {/* Right actions */}
-            <div className="flex items-center gap-2">
-              {/* View toggle */}
-              <div className="flex items-center" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '9px', padding: '3px' }}>
-                {[
-                  { id: 'events', icon: <List size={13} />, label: 'Events' },
-                  { id: 'frames', icon: <LayoutGrid size={13} />, label: 'Frames' },
-                ].map(({ id, icon, label }) => (
-                  <button
-                    key={id}
-                    onClick={() => setViewMode(id)}
-                    className="btn-ghost"
-                    style={{
-                      padding: '5px 12px', fontSize: '12px', borderRadius: '6px',
-                      ...(viewMode === id
-                        ? { background: 'var(--accent)', color: 'white', borderColor: 'transparent' }
-                        : { borderColor: 'transparent' }
-                      )
-                    }}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Live */}
-              <button
-                onClick={() => { setShowLivePanel(!showLivePanel); setShowIndexPanel(false) }}
-                className="btn-ghost"
-                style={showLivePanel ? { color: '#FCA5A5', borderColor: '#EF4444', background: 'rgba(239,68,68,.08)' } : {}}
-              >
-                <Radio size={13} />
-                Live
-                {showLivePanel && <span style={{ width: '6px', height: '6px', borderRadius: '99px', background: '#EF4444', marginLeft: '2px' }} />}
-              </button>
-
-              {/* Index */}
-              <button
-                onClick={() => { setShowIndexPanel(!showIndexPanel); setShowLivePanel(false) }}
-                className="btn-ghost"
-                style={showIndexPanel ? { color: 'var(--accent)', borderColor: 'var(--accent)', background: 'var(--accent-dim)' } : {}}
-              >
-                <Settings size={13} />
-                Index
-              </button>
-            </div>
+            <nav className="top-nav hidden xl:flex">
+              <button className="top-nav__item top-nav__item--active" onClick={() => scrollToId('search-section')}>search</button>
+              <button className="top-nav__item" onClick={() => scrollToId('results-section')}>results</button>
+              <button className="top-nav__item" onClick={() => scrollToId('index-section')}>index</button>
+              <button className="top-nav__item" onClick={() => scrollToId('status-section')}>status</button>
+            </nav>
           </div>
 
-          {/* Status bar */}
-          <div style={{ paddingBottom: '10px' }}>
-            <StatusBar />
+          <div className="flex items-center gap-3">
+            <div className="status-pill">
+              <span className={`status-pill__dot ${dbConnected ? 'status-pill__dot--live' : 'status-pill__dot--down'}`} />
+              <span>{dbConnected ? 'vector db online' : 'backend warming'}</span>
+            </div>
+            <button className="icon-shell" type="button" aria-label="jump to results" title="Jump to results" onClick={() => scrollToId('results-section')}>
+              <Bell size={15} />
+            </button>
+            <button
+              className="icon-shell"
+              type="button"
+              aria-label={theme === 'dark' ? 'switch to light mode' : 'switch to dark mode'}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            >
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
           </div>
         </div>
       </header>
 
-      {/* ── Main ── */}
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px' }}>
-        <div className="flex gap-6">
+      <aside className="side-rail hidden lg:flex">
+        <div className="side-rail__head">
+          <div className="side-rail__badge">
+            <Shield size={15} />
+          </div>
+          <span>OPS-04</span>
+        </div>
 
-          {/* Left content */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="side-rail__stack">
+          {sideActions.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onClick}
+              className={`side-rail__item ${item.active ? 'side-rail__item--active' : ''}`}
+              aria-label={item.label}
+              title={item.label}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
 
-            {/* ── Hero / Search section ── */}
-            <div style={{ padding: '48px 0 32px' }}>
-              <SectionTag index={1} total={TOTAL_SECTIONS} label="search" />
+        <div className="side-rail__foot">
+          <button type="button" className="side-rail__mini" title="Jump to search" onClick={() => scrollToId('search-section')}>
+            <TerminalSquare size={15} />
+          </button>
+        </div>
+      </aside>
 
-              {/* Hero headline — supermemory style large bold */}
-              {!hasSearched && (
-                <div className="mb-8 animate-fade-up">
-                  <h1 className="headline mb-4" style={{ maxWidth: '640px' }}>
-                    Your footage never<br />leaves the building
-                  </h1>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '16px', maxWidth: '520px', lineHeight: '1.65' }}>
-                    Search hours of security video in plain English.
-                    No scrubbing. No annotations. No cloud.
-                    Entirely offline — powered by Actian VectorAI DB.
-                  </p>
+      <div className="workspace-shell">
+        <section className="hero-console" id="search-section">
+          <div className="hero-console__eyebrow">
+            <span className="hero-console__pulse" />
+            local retrieval surface // Actian VectorAI DB
+          </div>
+          <h1 className="hero-console__title">Search Security Footage Faster</h1>
+          <p className="hero-console__copy">
+            Find the right moment in your indexed store footage using natural language, visual similarity, and timeline-based review without leaving the machine.
+          </p>
+          <div className="hero-console__search">
+            <SearchBar onSearch={handleSearch} loading={loading} onVoiceResult={handleVoiceResult} />
+          </div>
+          <div className="hero-console__stats">
+            {statTiles.map((stat) => (
+              <div key={stat.label} className={`hero-stat hero-stat--${stat.tone}`}>
+                <div className="hero-stat__value">{stat.value}</div>
+                <div className="hero-stat__label">{stat.label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
 
-                  {/* Stats strip — 3 numbers */}
-                  <div className="flex items-center gap-10 mt-8 pb-8" style={{ borderBottom: '1px solid var(--border)' }}>
-                    {[
-                      { num: '<15ms', label: 'query latency' },
-                      { num: '100%', label: 'offline' },
-                      { num: '0', label: 'bytes sent' },
-                    ].map(({ num, label }) => (
-                      <div key={label}>
-                        <div className="stat-number">{num}</div>
-                        <div className="section-label mt-1">{label}</div>
-                      </div>
-                    ))}
-                  </div>
+        <div className="mobile-actions lg:hidden">
+          {sideActions.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onClick}
+              className={`mobile-actions__item ${item.active ? 'mobile-actions__item--active' : ''}`}
+              title={item.label}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <section className="dashboard-grid">
+          <div className="dashboard-column dashboard-column--filters">
+            <SectionTag index={1} total={TOTAL_SECTIONS} label="filters" />
+            <div className="console-panel">
+              <div className="console-panel__header">
+                <div>
+                  <div className="console-panel__kicker">[ FILTERS ]</div>
+                  <div className="console-panel__title">Query constraints</div>
                 </div>
-              )}
-
-              <SearchBar onSearch={handleSearch} loading={loading} onVoiceResult={handleVoiceResult} />
-            </div>
-
-            {/* ── Filters ── */}
-            <div style={{ marginBottom: '20px' }}>
+                <Filter size={14} style={{ color: 'var(--accent)' }} />
+              </div>
               <FilterPanel filters={filters} onChange={setFilters} />
             </div>
 
-            {/* ── Error ── */}
+            {!hasSearched && (
+              <div className="console-panel">
+                <div className="console-panel__header">
+                  <div>
+                    <div className="console-panel__kicker">[ STACK ]</div>
+                    <div className="console-panel__title">Core components</div>
+                  </div>
+                  <Database size={14} style={{ color: 'var(--accent)' }} />
+                </div>
+                <div className="token-cloud">
+                  {['Actian VectorAI DB', 'CLIP ViT-B/32', 'OpenCV', 'Whisper', 'FastAPI', 'React'].map((t) => (
+                    <span key={t} className="badge badge-gray font-mono">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="dashboard-column dashboard-column--results" id="results-section">
+            <SectionTag index={2} total={TOTAL_SECTIONS} label="results" />
+
+            <div className="results-head">
+              <div>
+                <div className="console-panel__kicker">[ SEARCH RESULTS ]</div>
+                <div className="console-panel__title">
+                  {hasSearched ? 'Matched events and searchable frame hits' : 'Run a query to surface events and frame matches'}
+                </div>
+              </div>
+              <div className="results-head__mode">
+                <button type="button" className={`mode-chip ${viewMode === 'events' ? 'mode-chip--active' : ''}`} onClick={() => setViewMode('events')} title="Show grouped events">
+                  <List size={13} /> events
+                </button>
+                <button type="button" className={`mode-chip ${viewMode === 'frames' ? 'mode-chip--active' : ''}`} onClick={() => setViewMode('frames')} title="Show individual frames">
+                  <LayoutGrid size={13} /> frames
+                </button>
+              </div>
+            </div>
+
             {error && (
               <div
                 className="animate-fade-up mb-4 flex items-center gap-3 px-4 py-3 rounded-xl"
@@ -267,95 +352,103 @@ export default function App() {
               </div>
             )}
 
-            {/* ── Results section ── */}
-            {hasSearched && (
-              <div style={{ paddingBottom: '48px' }}>
-                <SectionTag index={2} total={TOTAL_SECTIONS} label="results" />
-
-                {/* Timeline */}
-                {!loading && (
-                  <div className="mb-4">
-                    <Timeline cameraId={filters.cameraId} date={filters.date} onBucketClick={handleTimelineBucketClick} />
-                  </div>
-                )}
-
-                {loading ? <Skeleton /> : <ResultsGrid results={results} viewMode={viewMode} onFrameSelect={setSelectedFrame} onSimilaritySearch={handleSimilaritySearch} />}
+            {!loading && hasSearched && (
+              <div className="mb-4">
+                <Timeline cameraId={filters.cameraId} date={filters.date} onBucketClick={handleTimelineBucketClick} />
               </div>
             )}
+
+            <div className="results-stage">
+              {loading
+                ? <Skeleton />
+                : hasSearched
+                  ? <ResultsGrid results={results} viewMode={viewMode} onFrameSelect={setSelectedFrame} onSimilaritySearch={handleSimilaritySearch} />
+                  : (
+                    <div className="results-empty">
+                      <div className="results-empty__icon">
+                        <Search size={24} />
+                      </div>
+                      <h3>Start with a real store-footage query</h3>
+                      <p>Use the prompt suggestions below the search bar, or start with “person entering store” to match the shipped demo footage.</p>
+                    </div>
+                  )}
+            </div>
           </div>
 
-          {/* Right panel */}
-          {(showIndexPanel || showLivePanel) && (
-            <div style={{ width: '300px', flexShrink: 0, paddingTop: '48px' }}>
-              <SectionTag index={3} total={TOTAL_SECTIONS} label={showIndexPanel ? 'index' : 'live'} />
-              <div
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '14px',
-                  padding: '20px',
-                  position: 'sticky',
-                  top: '96px',
-                }}
-              >
-                <div className="flex items-center justify-between mb-5">
-                  <span className="subheadline" style={{ fontSize: '16px' }}>
-                    {showIndexPanel ? 'Index Footage' : 'Live Feed'}
-                  </span>
+          <div className="dashboard-column dashboard-column--side" id="index-section">
+            <SectionTag index={3} total={TOTAL_SECTIONS} label={showLivePanel ? 'live' : 'index'} />
+            <div className="console-panel">
+              <div className="console-panel__header">
+                <div>
+                  <div className="console-panel__kicker">{showLivePanel ? '[ LIVE CAPTURE ]' : '[ INDEXING ]'}</div>
+                  <div className="console-panel__title">{showLivePanel ? 'Live feed control' : 'Index footage and review jobs'}</div>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
-                    className="btn-ghost"
-                    style={{ padding: '4px 8px' }}
-                    onClick={() => { setShowIndexPanel(false); setShowLivePanel(false) }}
+                    className={`icon-shell ${!showLivePanel ? 'icon-shell--active' : ''}`}
+                    type="button"
+                    onClick={() => { setShowIndexPanel(true); setShowLivePanel(false) }}
+                    aria-label="show indexing"
+                    title="Show indexing"
                   >
-                    <X size={14} />
+                    <Database size={14} />
                   </button>
+                  <button
+                    className={`icon-shell ${showLivePanel ? 'icon-shell--active icon-shell--danger' : ''}`}
+                    type="button"
+                    onClick={() => { setShowLivePanel(true); setShowIndexPanel(false) }}
+                    aria-label="show live feed"
+                    title="Show live feed"
+                  >
+                    <Radio size={14} />
+                  </button>
+                  {(showIndexPanel || showLivePanel) && (
+                    <button
+                      className="icon-shell"
+                      type="button"
+                      onClick={() => { setShowIndexPanel(false); setShowLivePanel(false) }}
+                      aria-label="close panel"
+                      title="Close side panel"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
-                {showIndexPanel ? <IndexPanel /> : <LiveFeedPanel />}
               </div>
-            </div>
-          )}
-        </div>
-      </main>
 
-      {/* ── Matrix CTA strip (supermemory final section style) ── */}
-      {!hasSearched && (
-        <div
-          className="relative overflow-hidden"
-          style={{
-            borderTop: '1px solid var(--border)',
-            padding: '60px 0',
-            background: 'linear-gradient(180deg, var(--bg-base) 0%, #0A0F1E 100%)',
-          }}
-        >
-          <MatrixStrip />
-          <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 1 }}>
-            <div className="flex items-center justify-between flex-wrap gap-6">
-              <div>
-                <p className="section-label mb-3">[ built with ]</p>
-                <div className="flex flex-wrap gap-2">
-                  {['Actian VectorAI DB', 'CLIP ViT-B/32', 'OpenCV', 'Whisper', 'FastAPI', 'React'].map((t) => (
-                    <span key={t} className="badge badge-gray font-mono">{t}</span>
-                  ))}
+              {showLivePanel ? <LiveFeedPanel /> : <IndexPanel />}
+            </div>
+
+            <div className="console-panel" id="status-section">
+              <div className="console-panel__header">
+                <div>
+                  <div className="console-panel__kicker">[ SYSTEM STATUS ]</div>
+                  <div className="console-panel__title">Operational summary</div>
                 </div>
+                <Shield size={14} style={{ color: 'var(--accent)' }} />
               </div>
-              <div className="text-right">
-                <p className="section-label mb-2">Actian VectorAI DB Build Challenge · April 2026</p>
-                <a
-                  href="https://github.com/AryanSaxenaa/silentwitness"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-ghost"
-                >
-                  View on GitHub →
-                </a>
-              </div>
+              <StatusBar />
             </div>
           </div>
-        </div>
-      )}
+        </section>
 
-      {/* Frame modal */}
+        <footer className="bottom-bar">
+          <div className="bottom-bar__left">
+            <span>[ SYSTEM_HEALTH: {dbConnected ? 'ONLINE' : 'WARMING'} ]</span>
+            <span>SCANS: {indexedFrames > 0 ? indexedFrames.toLocaleString() : '--'}</span>
+            <span>STORAGE: ACTIAN VECTORAI DB</span>
+          </div>
+          <div className="bottom-bar__right">
+            <span className="bottom-bar__signal" />
+            <span>FULLY LOCAL INVESTIGATION LOOP</span>
+            <button type="button" className="bottom-bar__jump" onClick={() => scrollToId('search-section')} title="Back to top">
+              <ChevronRight size={13} />
+            </button>
+          </div>
+        </footer>
+      </div>
+
       {selectedFrame && <FrameModal frame={selectedFrame} onClose={() => setSelectedFrame(null)} />}
-    </div>
+    </main>
   )
 }
