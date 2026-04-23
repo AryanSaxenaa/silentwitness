@@ -12,6 +12,7 @@ THUMBNAILS_DIR = os.path.join(DATA_DIR, "thumbnails")
 
 FRAME_RATE = float(os.getenv("FRAME_RATE", "1"))          # fps to sample
 MOTION_THRESHOLD = int(os.getenv("MOTION_THRESHOLD", "25"))  # pixel diff threshold
+OCR_EVERY_N_FRAMES = max(1, int(os.getenv("OCR_EVERY_N_FRAMES", "3")))
 
 CLIP_MODEL = "clip-ViT-B-32"
 CLIP_DIM = 512

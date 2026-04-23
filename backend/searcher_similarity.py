@@ -15,7 +15,14 @@ except ImportError:
     from actian_vectorai.models import VectorAIClient
 from config import COLLECTION_NAME
 from db import get_client
-from searcher import SearchFilters, build_filter, cluster_into_events, motion_aware_fusion
+from searcher import (
+    SearchFilters,
+    apply_structured_post_filters,
+    apply_temporal_diversity,
+    build_filter,
+    cluster_into_events,
+    motion_aware_fusion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +188,8 @@ def search_similar(
 
     # Step 4: motion-aware fusion + clustering
     fused = motion_aware_fusion(filtered_results)
+    fused = apply_structured_post_filters(fused, filters)
+    fused = apply_temporal_diversity(fused, max(1, limit))
     events = cluster_into_events(fused)
 
     return {

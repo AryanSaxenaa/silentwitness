@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender-dev \
     libgomp1 \
     ffmpeg \
+    tesseract-ocr \
     libavcodec-dev \
     libavformat-dev \
     libavdevice-dev \

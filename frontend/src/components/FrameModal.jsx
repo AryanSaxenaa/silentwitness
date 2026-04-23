@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { X, Clock, Camera, Activity } from 'lucide-react'
+import { X, Clock, Camera, Type } from 'lucide-react'
 import { thumbnailUrl } from '../api'
 
 function fmt(isoStr) {
@@ -94,6 +94,25 @@ export default function FrameModal({ frame, onClose }) {
         </div>
 
         <div className="px-5 py-3" style={{ background: 'var(--bg-subtle)', borderTop: '1px solid var(--border)' }}>
+          {frame.ocr_text ? (
+            <div
+              style={{
+                marginBottom: '12px',
+                padding: '12px 14px',
+                borderRadius: '14px',
+                border: '1px solid var(--border)',
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <div className="flex items-center gap-1.5 section-label" style={{ marginBottom: '7px' }}>
+                <Type size={11} />
+                OCR text from this frame
+              </div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.5 }}>
+                {frame.ocr_text}
+              </div>
+            </div>
+          ) : null}
           <p className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
             Jump to <span style={{ color: 'var(--text-secondary)' }}>{frame.timestamp_sec}s</span> in{' '}
             <span style={{ color: 'var(--text-secondary)' }}>{frame.video_file}</span> to view in context

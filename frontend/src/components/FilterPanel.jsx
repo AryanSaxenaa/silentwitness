@@ -16,7 +16,7 @@ export default function FilterPanel({ filters, onChange }) {
   const activeFilters = Object.entries(filters).filter(([, v]) => v !== null && v !== '' && v !== undefined)
   const activeCount = activeFilters.length
 
-  const clearAll = () => onChange({ cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null })
+  const clearAll = () => onChange({ cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null, ocrText: null })
 
   return (
     <div>
@@ -96,6 +96,18 @@ export default function FilterPanel({ filters, onChange }) {
               onChange={(e) => update('date', e.target.value)}
               className="input-field"
               style={{ fontSize: '13px', colorScheme: 'dark' }}
+            />
+          </div>
+
+          <div>
+            <label className="section-label block mb-2">Text in frame</label>
+            <input
+              type="text"
+              placeholder="receipt, exit, aisle 4..."
+              value={filters.ocrText || ''}
+              onChange={(e) => update('ocrText', e.target.value)}
+              className="input-field"
+              style={{ fontSize: '13px' }}
             />
           </div>
 

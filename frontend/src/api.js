@@ -19,6 +19,7 @@ export async function searchFootage({
   hourStart,
   hourEnd,
   minMotionScore,
+  ocrText,
   limit = 20,
   groupIntoEvents = true,
 }) {
@@ -29,6 +30,7 @@ export async function searchFootage({
     hour_start: hourStart ?? null,
     hour_end: hourEnd ?? null,
     min_motion_score: minMotionScore ?? null,
+    ocr_text: ocrText || null,
     limit,
     group_into_events: groupIntoEvents,
   })
@@ -72,7 +74,7 @@ export async function listFootage() {
   return data
 }
 
-export async function searchSimilar({ frameId, cameraId, date, hourStart, hourEnd, minMotionScore, excludeSameVideo = false, limit = 20 }) {
+export async function searchSimilar({ frameId, cameraId, date, hourStart, hourEnd, minMotionScore, ocrText, excludeSameVideo = false, limit = 20 }) {
   const { data } = await api.post('/api/search/similar', {
     frame_id: frameId,
     camera_id: cameraId || null,
@@ -80,6 +82,7 @@ export async function searchSimilar({ frameId, cameraId, date, hourStart, hourEn
     hour_start: hourStart ?? null,
     hour_end: hourEnd ?? null,
     min_motion_score: minMotionScore ?? null,
+    ocr_text: ocrText || null,
     exclude_same_video: excludeSameVideo,
     limit,
   })

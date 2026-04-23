@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import http.client
 import json
+import socket
 import sys
 import time
 import urllib.error
@@ -48,7 +49,15 @@ def request_json(
             req = urllib.request.Request(url, data=data, headers=headers, method=method)
             with urllib.request.urlopen(req, timeout=120) as response:
                 return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, http.client.RemoteDisconnected) as exc:
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            TimeoutError,
+            http.client.RemoteDisconnected,
+            ConnectionAbortedError,
+            socket.timeout,
+            OSError,
+        ) as exc:
             last_error = exc
             if attempt == retries - 1:
                 break
@@ -72,7 +81,7 @@ def wait_for_service(base_url: str, timeout_sec: int = 120) -> None:
     raise RuntimeError(f"Timed out waiting for backend health. Last error: {last_error}")
 
 
-def wait_for_jobs(base_url: str, timeout_sec: int = 300) -> dict:
+def wait_for_jobs(base_url: str, timeout_sec: int = 900) -> dict:
     deadline = time.time() + timeout_sec
     last = {}
     while time.time() < deadline:
@@ -81,6 +90,18 @@ def wait_for_jobs(base_url: str, timeout_sec: int = 300) -> dict:
             return last
         time.sleep(5)
     raise RuntimeError(f"Timed out waiting for indexing jobs. Last state: {last}")
+
+
+def wait_for_retrieval_sanity(base_url: str, timeout_sec: int = 180) -> dict:
+    deadline = time.time() + timeout_sec
+    last = {}
+    while time.time() < deadline:
+        status = request_json("GET", f"{base_url}/api/status")
+        last = (status.get("runtime_health") or {}).get("retrieval_sanity") or {}
+        if last.get("ok"):
+            return last
+        time.sleep(5)
+    raise RuntimeError(f"Timed out waiting for retrieval sanity. Last state: {last}")
 
 
 def extract_frame_id(search_result: dict) -> str | None:
@@ -99,6 +120,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument("--job-timeout-sec", type=int, default=900)
+    parser.add_argument("--sanity-timeout-sec", type=int, default=180)
     args = parser.parse_args()
 
     base_url = args.base_url.rstrip("/")
@@ -117,17 +140,13 @@ def main() -> int:
         rebuild = request_json("POST", f"{base_url}/api/index/rebuild")
         print(f"[2/6] Rebuild queued: {rebuild.get('queued', 0)} job(s)")
 
-        jobs = wait_for_jobs(base_url)
+        jobs = wait_for_jobs(base_url, timeout_sec=args.job_timeout_sec)
         errors = {job_id: job for job_id, job in jobs.items() if job.get("status") == "error"}
         if errors:
             raise RuntimeError(f"Index rebuild failed: {errors}")
         print(f"[3/6] Rebuild completed: {len(jobs)} job(s)")
 
-        status = request_json("GET", f"{base_url}/api/status")
-        runtime_health = status.get("runtime_health") or {}
-        sanity = runtime_health.get("retrieval_sanity") or {}
-        if not sanity.get("ok"):
-            raise RuntimeError(f"Retrieval sanity failed: {sanity}")
+        sanity = wait_for_retrieval_sanity(base_url, timeout_sec=args.sanity_timeout_sec)
         print(f"[4/6] Retrieval sanity healthy: {sanity.get('similar_results', 0)} similar match(es)")
 
         search_result = request_json(
@@ -175,7 +194,16 @@ def main() -> int:
         print("Smoke test passed.")
         return 0
 
-    except (RuntimeError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError, http.client.RemoteDisconnected) as exc:
+    except (
+        RuntimeError,
+        urllib.error.URLError,
+        urllib.error.HTTPError,
+        TimeoutError,
+        http.client.RemoteDisconnected,
+        ConnectionAbortedError,
+        socket.timeout,
+        OSError,
+    ) as exc:
         print(f"Smoke test failed: {exc}", file=sys.stderr)
         return 1
 

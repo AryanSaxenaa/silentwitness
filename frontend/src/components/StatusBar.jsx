@@ -17,6 +17,7 @@ export default function StatusBar() {
   const retrievalSanity = status?.runtime_health?.retrieval_sanity
   const lastJob = status?.runtime_health?.last_index_job
   const sanityOk = retrievalSanity?.ok
+  const ocrFrames = lastJob?.ocr_frames_detected ?? 0
 
   return (
     <div className="space-y-4">
@@ -50,6 +51,10 @@ export default function StatusBar() {
           <span>{lastJob?.video || 'No completed jobs yet'}</span>
         </div>
         <div className="flex items-start justify-between gap-3">
+          <span className="section-label" style={{ whiteSpace: 'normal' }}>OCR hits in last job</span>
+          <span>{ocrFrames}</span>
+        </div>
+        <div className="flex items-start justify-between gap-3">
           <span className="section-label" style={{ whiteSpace: 'normal' }}>Similarity check</span>
           <span>{retrievalSanity?.similar_results ?? 0} matches</span>
         </div>
@@ -58,7 +63,7 @@ export default function StatusBar() {
       <div className="rounded-xl p-3" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)' }}>
         <div className="section-label">Offline mode</div>
         <div className="mt-2 text-[12px]" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-          Footage stays on this machine. If search ever shows zero results while frames are indexed, use <strong>Rebuild index</strong> in the operations panel.
+          Footage stays on this machine. Search currently supports semantic retrieval, metadata filters, OCR text filtering, and frame-to-frame similarity on the same local index.
         </div>
       </div>
     </div>

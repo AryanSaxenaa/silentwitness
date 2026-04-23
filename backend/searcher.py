@@ -6,6 +6,7 @@ with Filter DSL + motion-aware score fusion for temporally-aware results.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
@@ -28,6 +29,7 @@ class SearchFilters:
     hour_start: Optional[int] = None  # 0-23
     hour_end: Optional[int] = None  # 0-23
     min_motion_score: Optional[float] = None  # 0.0–1.0
+    ocr_text: Optional[str] = None
 
 
 @dataclass
@@ -39,9 +41,11 @@ class SearchResult:
     timestamp_sec: float
     absolute_time: str
     motion_score: float
+    semantic_score: float
     thumbnail_path: str
     hour: int
     date: str
+    ocr_text: str
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -186,6 +190,7 @@ def motion_aware_fusion(
             SearchResult(
                 frame_id=str(getattr(hit, "id", "")),
                 score=round(fused_score, 4),
+                semantic_score=round(clip_score, 4),
                 camera_id=str(payload.get("camera_id", "unknown")),
                 video_file=str(payload.get("video_file", "")),
                 timestamp_sec=_to_float(payload.get("timestamp_sec", 0.0), 0.0),
@@ -194,11 +199,53 @@ def motion_aware_fusion(
                 thumbnail_path=str(payload.get("thumbnail_path", "")),
                 hour=_to_int(payload.get("hour", 0), 0),
                 date=str(payload.get("date", "")),
+                ocr_text=str(payload.get("ocr_text", "")),
             )
         )
 
     fused.sort(key=lambda x: x.score, reverse=True)
     return fused
+
+
+def apply_structured_post_filters(
+    results: list[SearchResult],
+    filters: Optional[SearchFilters],
+) -> list[SearchResult]:
+    if not filters or not filters.ocr_text:
+        return results
+
+    needle = filters.ocr_text.strip().lower()
+    if not needle:
+        return results
+
+    return [result for result in results if needle in result.ocr_text.lower()]
+
+
+def apply_temporal_diversity(
+    results: list[SearchResult],
+    limit: int,
+    dedup_window_sec: float = 4.0,
+) -> list[SearchResult]:
+    """
+    Remove near-duplicate hits from the same short burst so results spread out more.
+    """
+    diversified: list[SearchResult] = []
+    seen_windows: dict[tuple[str, str, int], float] = {}
+
+    for result in sorted(results, key=lambda item: item.score, reverse=True):
+        window_key = (
+            result.camera_id,
+            result.video_file,
+            int(math.floor(result.timestamp_sec / dedup_window_sec)),
+        )
+        if window_key in seen_windows:
+            continue
+        seen_windows[window_key] = result.timestamp_sec
+        diversified.append(result)
+        if len(diversified) >= limit:
+            break
+
+    return diversified
 
 
 def _make_event(frames: list[SearchResult]) -> dict[str, Any]:
@@ -222,6 +269,8 @@ def _make_event(frames: list[SearchResult]) -> dict[str, Any]:
                 "timestamp_sec": f.timestamp_sec,
                 "absolute_time": f.absolute_time,
                 "motion_score": f.motion_score,
+                "semantic_score": f.semantic_score,
+                "ocr_text": f.ocr_text,
                 "thumbnail_path": f.thumbnail_path,
             }
             for f in sorted(frames, key=lambda x: x.score, reverse=True)
@@ -282,7 +331,9 @@ def search(
     2. Apply Filter DSL
     3. Vector search in VectorAI DB
     4. Apply motion-aware fusion with motion score
-    5. Optionally cluster into events
+    5. Apply structured OCR post-filter if requested
+    6. Spread results across time so duplicates do not dominate
+    7. Optionally cluster into events
     """
     db_client: VectorAIClient = client if client is not None else get_client()
 
@@ -300,7 +351,9 @@ def search(
     )
     raw_results = _parse_search_response(raw_results)
 
-    fused = motion_aware_fusion(raw_results)[: max(1, limit)]
+    fused = motion_aware_fusion(raw_results)
+    fused = apply_structured_post_filters(fused, filters)
+    fused = apply_temporal_diversity(fused, max(1, limit))
 
     if not fused:
         return {"query": query, "total_results": 0, "events": [], "frames": []}

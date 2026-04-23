@@ -5,6 +5,7 @@ Motion-gated: only frames with significant activity are indexed.
 
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from PIL import Image
+import pytesseract
 from sentence_transformers import SentenceTransformer
 
 try:
@@ -30,6 +32,7 @@ from config import (
     COLLECTION_NAME,
     FOOTAGE_DIR,
     FRAME_RATE,
+    OCR_EVERY_N_FRAMES,
     THUMBNAILS_DIR,
 )
 from db import ensure_collection, get_client
@@ -73,6 +76,27 @@ def save_thumbnail(
     resized = cv2.resize(frame_bgr, size, interpolation=cv2.INTER_AREA)
     cv2.imwrite(thumb_path, resized, [cv2.IMWRITE_JPEG_QUALITY, 80])
     return thumb_path
+
+
+def extract_ocr_text(frame_bgr: np.ndarray) -> str:
+    """
+    Run lightweight OCR on the kept frame.
+    Returns normalized text; empty string when no useful text is present.
+    """
+    try:
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.bilateralFilter(gray, 5, 75, 75)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        text = pytesseract.image_to_string(thresh, config="--psm 6")
+    except Exception as exc:
+        logger.debug("OCR failed on frame: %s", exc)
+        return ""
+
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < 2:
+        return ""
+    return text[:240]
 
 
 def parse_recording_start(filename: str) -> datetime | None:
@@ -148,6 +172,7 @@ def index_video(
     points_batch = []
     total_frames = 0
     indexed_frames = 0
+    ocr_frames_detected = 0
 
     logger.info(
         f"Starting indexing: {filename} | camera={camera_id} | fps={fps_sample}"
@@ -165,6 +190,11 @@ def index_video(
 
         # CLIP embedding
         vector = embed_frame(frame_bgr)
+        should_run_ocr = (sampled_idx % OCR_EVERY_N_FRAMES) == 0
+        ocr_text = extract_ocr_text(frame_bgr) if should_run_ocr else ""
+        has_ocr_text = bool(ocr_text)
+        if has_ocr_text:
+            ocr_frames_detected += 1
 
         point = PointStruct(
             id=frame_id,
@@ -177,6 +207,8 @@ def index_video(
                 "hour": absolute_time.hour,
                 "date": absolute_time.date().isoformat(),
                 "motion_score": motion_score,
+                "ocr_text": ocr_text,
+                "has_ocr_text": has_ocr_text,
                 "thumbnail_path": thumb_path,
                 "frame_index": sampled_idx,
             },
@@ -207,6 +239,7 @@ def index_video(
         "camera_id": camera_id,
         "total_frames_sampled": total_frames,
         "frames_indexed": indexed_frames,
+        "ocr_frames_detected": ocr_frames_detected,
         "recording_start": recording_start.isoformat(),
     }
 

@@ -10,11 +10,14 @@ Built with [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-
 
 - Natural-language search over indexed footage
 - Metadata filters for camera, date, hour range, and minimum motion score
+- OCR text extraction on indexed frames for text-in-frame filtering
 - Event clustering for grouping nearby frame hits into incident-style windows
 - Visual similarity search from any indexed frame
+- Temporal diversity reranking to reduce near-duplicate frame hits
 - Activity timeline for time-based review
 - Local voice queries through Whisper
 - Optional live capture mode for webcam or RTSP sources
+- Runtime health panel with retrieval sanity and indexing summary
 - Fully local runtime path with no cloud dependency during indexing or retrieval
 
 ## How It Works
@@ -22,18 +25,21 @@ Built with [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-
 ### Indexing
 
 1. Sample frames from a video at a configurable rate.
-2. Use motion detection to keep only activity-relevant frames.
+2. Use background-subtraction-based motion detection to keep only activity-relevant frames.
 3. Generate CLIP embeddings for the remaining frames.
-4. Save thumbnails and metadata such as camera ID, date, hour, timestamp, and motion score.
-5. Upsert vectors and payloads into Actian VectorAI DB.
+4. Run OCR on a lightweight cadence across kept frames and store extracted text when present.
+5. Save thumbnails and metadata such as camera ID, date, hour, timestamp, motion score, and OCR text.
+6. Upsert vectors and payloads into Actian VectorAI DB.
 
 ### Search
 
 1. Convert the text query into a CLIP text embedding.
 2. Apply optional metadata filters.
-3. Run vector search in Actian VectorAI DB.
-4. Apply a lightweight motion-aware fusion step to balance semantic relevance with scene activity.
-5. Group nearby results into clustered event windows when requested.
+3. Apply optional OCR text filtering on stored frame text.
+4. Run vector search in Actian VectorAI DB.
+5. Apply a lightweight motion-aware fusion step to balance semantic relevance with scene activity.
+6. Apply temporal diversity reranking so near-identical frames do not dominate the results.
+7. Group nearby results into clustered event windows when requested.
 
 ### Similarity Search
 
@@ -47,7 +53,7 @@ Actian VectorAI DB is the core retrieval layer in this project.
 
 - It stores frame embeddings and structured metadata together.
 - It powers semantic vector search over indexed footage.
-- It supports server-side filtering for metadata-constrained retrieval.
+- It supports metadata-constrained retrieval across camera, date, hour, motion, and OCR-derived text.
 - It runs locally in Docker, which fits the privacy and ownership goals of the app.
 
 ## Architecture
@@ -64,6 +70,7 @@ FastAPI backend (:8000)
    +--> CLIP embeddings
    +--> Whisper transcription
    +--> OpenCV motion detection
+   +--> Tesseract OCR
    |
    v
 Actian VectorAI DB (:50051)
@@ -127,6 +134,12 @@ Services:
 
 The first backend build can take longer because model assets are preloaded.
 
+Useful backend tuning environment variables:
+
+- `FRAME_RATE` sampled frames per second during indexing
+- `MOTION_THRESHOLD` sensitivity for motion gating
+- `OCR_EVERY_N_FRAMES` OCR cadence on kept frames
+
 ## Usage
 
 ### Add footage
@@ -175,8 +188,11 @@ To narrow results, apply filters such as:
 - `date = 2026-04-22`
 - `hour range = 19 to 20`
 - `min motion score = 0.05`
+- `text in frame = yuan`
 
 Then open a returned frame and run similarity search to find related moments.
+
+OCR text works best as an extra retrieval signal, not as perfect transcription. Retail footage, motion blur, and low-resolution overlays can produce noisy text, but even partial matches are often useful for narrowing results.
 
 ## Evaluation Snapshot
 
@@ -185,11 +201,12 @@ Representative checks were run against the real store-footage clip:
 
 | Check | Filters | Observed outcome |
 | --- | --- | --- |
-| `person entering store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `9` frames across `6` clustered events, including entry-like moments around `19:00:13-19:00:16` and `19:03:05-19:03:15`. |
-| `person near shelves` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `5` frames across `5` events, including shelf-adjacent moments around `19:00:18`, `19:00:44`, `19:01:13`, `19:01:55`, and `19:03:05`. |
-| `two people in frame` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `9` frames across `4` events, with the strongest clustered window around `19:02:58-19:03:16`. |
-| `person walking in the store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `20` frames across `7` events, including broader movement windows around `19:00:10-19:00:35` and `19:03:03-19:03:05`. |
-| `person near shelves` with stricter motion filter | `cam2`, `2026-04-22`, hour `19-19`, min motion `0.10` | Narrowed to `1` event at `19:03:05`, showing that metadata filters materially change retrieval. |
+| `person entering store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `16` frames across `9` clustered events on the current OCR-enabled, diversity-reranked index. |
+| `person near shelves` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `13` frames across `7` clustered events on the current OCR-enabled, diversity-reranked index. |
+| `person near shelves` plus OCR filter | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05`, `ocr_text = yuan` | Narrowed to `1` matching frame, showing how OCR text can be combined with semantic search and metadata filters. |
+| `two people in frame` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned non-zero clustered results after temporal diversity reranking removed near-duplicate hits. |
+| `person walking in the store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned broad movement windows while avoiding excessive repetition from adjacent frames. |
+| `person near shelves` with stricter motion filter | `cam2`, `2026-04-22`, hour `19-19`, min motion `0.10` | Narrowed the search further, showing that structured filters materially change retrieval. |
 | Similarity search from a real indexed frame | current `cam2` dataset | Returned non-zero similar results and passed the automated smoke test. |
 
 ### Smoke test
@@ -206,6 +223,8 @@ Run it with:
 python scripts/smoke_test.py --base-url http://localhost:8000
 ```
 
+The smoke test rebuilds the index, waits for retrieval sanity, runs semantic search, and then runs similarity search from a returned frame.
+
 ## API
 
 ### Health
@@ -217,6 +236,8 @@ python scripts/smoke_test.py --base-url http://localhost:8000
 - `GET /api/status`
 
 Returns database connection state, collection stats, indexed cameras, and runtime health.
+
+Runtime health includes retrieval sanity plus the most recent indexing job summary, including OCR-positive frame count.
 
 ### Search
 
@@ -233,6 +254,7 @@ Example body:
   "hour_start": 19,
   "hour_end": 20,
   "min_motion_score": 0.05,
+  "ocr_text": "yuan",
   "limit": 20,
   "group_into_events": true
 }
@@ -293,6 +315,7 @@ uvicorn main:app --reload --port 8000
 - Python FastAPI
 - React + Vite
 - OpenCV
+- Tesseract OCR
 - sentence-transformers CLIP ViT-B/32
 - OpenAI Whisper `tiny`
 - Docker Compose

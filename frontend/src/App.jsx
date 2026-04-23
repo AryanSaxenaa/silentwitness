@@ -70,7 +70,7 @@ export default function App() {
     return window.localStorage.getItem('silentwitness-theme') || 'dark'
   })
   const [filters, setFilters] = useState({
-    cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null,
+    cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null, ocrText: null,
   })
 
   useEffect(() => {
@@ -109,7 +109,7 @@ export default function App() {
     setError(null)
     setHasSearched(true)
     try {
-      const data = await searchSimilar({ frameId, limit: 20 })
+      const data = await searchSimilar({ frameId, limit: 20, ...filters })
       setResults({ ...data, query: 'visually similar frames' })
     } catch (err) {
       setError(err?.response?.data?.detail || 'Similarity search failed')
@@ -142,7 +142,7 @@ export default function App() {
   const workflowSteps = [
     { title: '1. Add footage', copy: 'Place a clip in the footage folder or upload one from the operations panel.' },
     { title: '2. Index frames', copy: 'Run scan once so SilentWitness extracts motion-gated frames into Actian VectorAI DB.' },
-    { title: '3. Search and pivot', copy: 'Search in plain language, open a frame, then pivot into visually similar moments.' },
+    { title: '3. Search and pivot', copy: 'Search in plain language, refine with filters or OCR text, then pivot into visually similar moments.' },
   ]
 
   return (

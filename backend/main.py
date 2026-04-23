@@ -208,6 +208,7 @@ class SearchRequest(BaseModel):
     hour_start: Optional[int] = None
     hour_end: Optional[int] = None
     min_motion_score: Optional[float] = None
+    ocr_text: Optional[str] = None
     limit: int = 20
     group_into_events: bool = True
 
@@ -221,6 +222,7 @@ def search_footage(req: SearchRequest):
             hour_start=req.hour_start,
             hour_end=req.hour_end,
             min_motion_score=req.min_motion_score,
+            ocr_text=req.ocr_text,
         )
         return search(
             query=req.query,
@@ -241,6 +243,7 @@ def search_footage_get(
     hour_start: Optional[int] = None,
     hour_end: Optional[int] = None,
     min_motion_score: Optional[float] = None,
+    ocr_text: Optional[str] = None,
     limit: int = 20,
 ):
     req = SearchRequest(
@@ -250,6 +253,7 @@ def search_footage_get(
         hour_start=hour_start,
         hour_end=hour_end,
         min_motion_score=min_motion_score,
+        ocr_text=ocr_text,
         limit=limit,
     )
     return search_footage(req)
@@ -436,6 +440,7 @@ class SimilarityRequest(BaseModel):
     hour_start: Optional[int] = None
     hour_end: Optional[int] = None
     min_motion_score: Optional[float] = None
+    ocr_text: Optional[str] = None
     exclude_same_video: bool = False
     limit: int = 20
 
@@ -448,6 +453,7 @@ def search_similar_frames(req: SimilarityRequest):
         hour_start=req.hour_start,
         hour_end=req.hour_end,
         min_motion_score=req.min_motion_score,
+        ocr_text=req.ocr_text,
     )
     try:
         return search_similar(

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, Camera, ChevronDown, ChevronUp, Play, ScanSearch, Layers, Activity } from 'lucide-react'
+import { Clock, Camera, ChevronDown, ChevronUp, Play, ScanSearch, Layers, Activity, Type } from 'lucide-react'
 import { thumbnailUrl } from '../api'
 
 function fmt(isoStr) {
@@ -14,11 +14,45 @@ function ScorePill({ score }) {
   return <span className={`badge ${color} font-mono`}>{pct}%</span>
 }
 
+function OcrPreview({ text }) {
+  if (!text) return null
+  return (
+    <div
+      className="mt-3"
+      style={{
+        padding: '10px 12px',
+        borderRadius: '12px',
+        border: '1px solid var(--border)',
+        background: 'rgba(255,255,255,0.03)',
+      }}
+    >
+      <div className="flex items-center gap-1.5 section-label" style={{ marginBottom: '6px' }}>
+        <Type size={11} />
+        OCR text
+      </div>
+      <div
+        style={{
+          color: 'var(--text-secondary)',
+          fontSize: '12px',
+          lineHeight: 1.45,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  )
+}
+
 /* ── Bento event card ── */
 function EventCard({ event, onFrameClick, onSimilar }) {
   const [expanded, setExpanded] = useState(false)
   const best = event.frames?.[0]
   const thumb = thumbnailUrl(event.thumbnail_path)
+  const ocrText = best?.ocr_text || ''
   const durationLabel = event.duration_sec < 60
     ? `${event.duration_sec}s`
     : `${Math.floor(event.duration_sec / 60)}m ${event.duration_sec % 60}s`
@@ -101,6 +135,7 @@ function EventCard({ event, onFrameClick, onSimilar }) {
             <div className="font-mono truncate" style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
               {event.video_file}
             </div>
+            <OcrPreview text={ocrText} />
           </div>
 
           <div className="flex items-center gap-3 mt-4 flex-wrap">
@@ -207,6 +242,7 @@ function FrameCard({ frame, onClick, onSimilar }) {
           <span>{fmt(frame.absolute_time)}</span>
         </div>
         <div className="section-label" style={{ marginBottom: '10px' }}>Click card to inspect the frame</div>
+        <OcrPreview text={frame.ocr_text} />
         {onSimilar && (
           <button
             onClick={(e) => { e.stopPropagation(); onSimilar(frame.frame_id) }}
