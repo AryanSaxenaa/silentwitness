@@ -1,6 +1,6 @@
 """
-Search pipeline: text/image query → CLIP embed → VectorAI DB search
-with Filter DSL + DBSF score fusion for temporally-aware results.
+Search pipeline: text/image query -> CLIP embed -> VectorAI DB search
+with Filter DSL + motion-aware score fusion for temporally-aware results.
 """
 
 from __future__ import annotations
@@ -164,12 +164,12 @@ def build_filter(filters: Optional[SearchFilters]):
     return builder.build()
 
 
-def dbsf_fusion(
+def motion_aware_fusion(
     semantic_results: Iterable[Any],
     motion_boost_weight: float = 0.15,
 ) -> list[SearchResult]:
     """
-    Distribution-Based Score Fusion:
+    Lightweight motion-aware fusion:
     final_score = clip_score * (1 - motion_weight) + motion_score * motion_weight
     """
     fused: list[SearchResult] = []
@@ -281,7 +281,7 @@ def search(
     1. Embed query text with CLIP
     2. Apply Filter DSL
     3. Vector search in VectorAI DB
-    4. DBSF fusion with motion score
+    4. Apply motion-aware fusion with motion score
     5. Optionally cluster into events
     """
     db_client: VectorAIClient = client if client is not None else get_client()
@@ -300,7 +300,7 @@ def search(
     )
     raw_results = _parse_search_response(raw_results)
 
-    fused = dbsf_fusion(raw_results)[: max(1, limit)]
+    fused = motion_aware_fusion(raw_results)[: max(1, limit)]
 
     if not fused:
         return {"query": query, "total_results": 0, "events": [], "frames": []}

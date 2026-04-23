@@ -1,7 +1,7 @@
 """
-Frame similarity search — "find similar moments" from an existing indexed frame.
+Frame similarity search - "find similar moments" from an existing indexed frame.
 Uses the stored vector directly: no re-embedding, no text query needed.
-Plugs into the same DBSF fusion + event clustering pipeline.
+Plugs into the same motion-aware fusion + event clustering pipeline.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ except ImportError:
     from actian_vectorai.models import VectorAIClient
 from config import COLLECTION_NAME
 from db import get_client
-from searcher import SearchFilters, build_filter, cluster_into_events, dbsf_fusion
+from searcher import SearchFilters, build_filter, cluster_into_events, motion_aware_fusion
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def search_similar(
     1. Fetch the stored CLIP vector for the source frame
     2. Run vector similarity search (same pipeline as text search)
     3. Filter out the source frame itself from results
-    4. Apply DBSF fusion + event clustering
+    4. Apply motion-aware fusion + event clustering
     """
     db_client: VectorAIClient = client if client is not None else get_client()
 
@@ -179,8 +179,8 @@ def search_similar(
             "frames": [],
         }
 
-    # Step 4: DBSF fusion + clustering
-    fused = dbsf_fusion(filtered_results)
+    # Step 4: motion-aware fusion + clustering
+    fused = motion_aware_fusion(filtered_results)
     events = cluster_into_events(fused)
 
     return {

@@ -144,7 +144,8 @@ silentwitness/
 ├── footage/
 ├── data/
 ├── scripts/
-│   └── generate_demo.py
+│   ├── generate_demo.py
+│   └── smoke_test.py
 └── docker-compose.yml
 ```
 
@@ -153,6 +154,25 @@ silentwitness/
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) or Docker Engine with Compose
+
+### Official Actian Beta Setup
+
+This repository intentionally does **not** include the Actian beta wheel in git.
+
+That matches the organizer guidance in Discord: do not push `actian_vectorai-0.1.0b2-py3-none-any.whl` to your public repo.
+
+Before building the backend, do this once:
+
+1. Clone or download the official beta repo:
+   [hackmamba-io/actian-vectorAI-db-beta](https://github.com/hackmamba-io/actian-vectorAI-db-beta)
+2. Locate the official beta wheel from that repo or release bundle.
+3. Copy the wheel into:
+
+```text
+backend/actian_vectorai-0.1.0b2-py3-none-any.whl
+```
+
+The backend Docker build expects that file locally. Without it, `docker compose build` will fail.
 
 ### 1. Clone
 
@@ -183,12 +203,7 @@ cam3_street_20260422_190100.mp4
 
 This helps the app infer camera and recording time more cleanly.
 
-If you do not have footage yet, generate a local demo clip:
-
-```bash
-pip install opencv-python numpy
-python scripts/generate_demo.py
-```
+For the strongest real-world demo, use actual short CCTV-style footage rather than the synthetic generator.
 
 ### 3. Start the stack
 
@@ -245,9 +260,61 @@ This is the cleanest current live demo flow for a store CCTV-style clip.
 6. Open one result and run visually similar search.
 7. Show the timeline and jump to an active window.
 
+### Show the required advanced Actian usage
+
+The hackathon requires going beyond plain similarity search. SilentWitness satisfies that through **filtered search**.
+
+In the demo, do not stop at free-text search alone. Show at least one filtered run such as:
+
+- `camera_id = cam2`
+- `date = 2026-04-22`
+- `hour range = 19 to 20`
+- `min motion score = 0.05`
+
+Then run:
+
+- `person entering store`
+- `person near shelves`
+
+This makes it obvious that Actian VectorAI DB is handling both vector retrieval and structured metadata filtering in the same workflow.
+
 ### Suggested narration
 
 “SilentWitness is a local semantic search tool for security footage. I indexed this store video into Actian VectorAI DB, and now I can search for events like `person entering store` or `person near shelves` in plain English. The system returns clustered moments with timestamps, and I can pivot from any frame into visually similar moments. Everything here runs locally without sending footage to the cloud.”
+
+## Evaluation
+
+The table below records representative checks run against the current real store-footage clip:
+`cam2_store_20260422_190000.mp4`
+
+All rows below were tested against the live API on the indexed `cam2` dataset.
+
+| Check | Filters | Observed outcome |
+| --- | --- | --- |
+| `person entering store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `9` frames across `6` clustered events, including entry-like moments around `19:00:13-19:00:16` and `19:03:05-19:03:15`. |
+| `person near shelves` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `5` frames across `5` events, including shelf-adjacent moments around `19:00:18`, `19:00:44`, `19:01:13`, `19:01:55`, and `19:03:05`. |
+| `two people in frame` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `9` frames across `4` events, with the strongest clustered window around `19:02:58-19:03:16`. |
+| `person walking in the store` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `20` frames across `7` events, including broader movement windows around `19:00:10-19:00:35` and `19:03:03-19:03:05`. |
+| `person at entrance` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `15` frames across `6` events, strongest near `19:03:05` and multiple early entry-area frames around `19:00:10-19:00:22`. |
+| `customer moving through aisle` | `cam2`, `2026-04-22`, hour `19-20`, min motion `0.05` | Returned `17` frames across `8` events, showing aisle traversal windows around `19:00:10-19:00:35` and `19:03:04`. |
+| `person near shelves` with stricter motion filter | `cam2`, `2026-04-22`, hour `19-19`, min motion `0.10` | Narrowed to `1` event at `19:03:05`, demonstrating that motion and time filters materially change retrieval. |
+| Similarity search from a real indexed frame | source frame from current `cam2` dataset | Returned non-zero similar results and passes the automated smoke test. |
+
+### Automated smoke test
+
+The repo also includes a small end-to-end smoke test for:
+
+1. rebuild index
+2. semantic search
+3. frame similarity search
+
+Run it with:
+
+```bash
+python scripts/smoke_test.py --base-url http://localhost:8000
+```
+
+This is useful before demoing or submitting.
 
 ## API Reference
 
@@ -366,6 +433,12 @@ uvicorn main:app --reload --port 8000
 
 You still need VectorAI DB running separately for backend development.
 
+### Development utilities
+
+`scripts/generate_demo.py` is a local development helper that creates a synthetic clip for testing the pipeline when no footage is available.
+
+It is **not** part of the recommended hackathon demo path. For submission and presentation, use real CCTV-style footage.
+
 ## Notes
 
 - This project uses motion-gated frame indexing rather than embedding every frame.
@@ -392,4 +465,3 @@ No license file is currently included in this repository.
 - [Actian VectorAI DB beta repo](https://github.com/hackmamba-io/actian-vectorAI-db-beta)
 - [sentence-transformers CLIP ViT-B/32](https://huggingface.co/sentence-transformers/clip-ViT-B-32)
 - [OpenAI Whisper](https://github.com/openai/whisper)
-
