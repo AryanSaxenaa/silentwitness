@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Eye,
+  Cctv,
   LayoutGrid,
   List,
   Radio,
@@ -66,8 +66,8 @@ export default function App() {
   const [activePanel, setActivePanel] = useState('index')
   const [hasSearched, setHasSearched] = useState(false)
   const [theme, setTheme] = useState(() => {
-    if (typeof window === 'undefined') return 'dark'
-    return window.localStorage.getItem('silentwitness-theme') || 'dark'
+    if (typeof window === 'undefined') return 'light'
+    return window.localStorage.getItem('silentwitness-theme') || 'light'
   })
   const [filters, setFilters] = useState({
     cameraId: null, date: null, hourStart: null, hourEnd: null, minMotionScore: null, ocrText: null,
@@ -151,7 +151,7 @@ export default function App() {
         <div className="top-shell__inner">
           <div className="brand-lockup">
             <div className="brand-mark">
-              <Eye size={16} />
+              <Cctv size={16} />
             </div>
             <div>
               <div className="brand-title">SilentWitness</div>
