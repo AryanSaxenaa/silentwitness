@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
@@ -20,6 +21,16 @@ from db import get_client
 from indexer import embed_text
 
 logger = logging.getLogger(__name__)
+
+
+VEHICLE_VARIANT_RULES: list[tuple[tuple[str, ...], list[str]]] = [
+    (("red car",), ["car", "vehicle", "automobile"]),
+    (("white van",), ["van", "vehicle", "delivery van"]),
+    (("police car",), ["police vehicle", "emergency vehicle", "car"]),
+    (("ambulance",), ["emergency vehicle", "medical vehicle", "van"]),
+    (("cars on street", "car on street", "street cars"), ["street traffic", "vehicle on road", "cars in street"]),
+    (("street traffic", "traffic on street"), ["cars on road", "vehicles on road", "street vehicles"]),
+]
 
 
 @dataclass
@@ -65,6 +76,32 @@ def _to_int(value: Any, default: int = 0) -> int:
 def _safe_payload(point: Any) -> dict[str, Any]:
     payload = getattr(point, "payload", None)
     return payload if isinstance(payload, dict) else {}
+
+
+def expand_query_variants(query: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", query.strip().lower())
+    variants = [query.strip()]
+
+    for triggers, expansions in VEHICLE_VARIANT_RULES:
+        if any(trigger in normalized for trigger in triggers):
+            variants.extend(expansions)
+
+    if " car " in f" {normalized} ":
+        variants.extend(["vehicle", "automobile"])
+    if " van " in f" {normalized} ":
+        variants.extend(["vehicle", "delivery van"])
+    if any(term in normalized for term in ("street", "road", "traffic")):
+        variants.extend(["vehicle on road", "street traffic"])
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for variant in variants:
+        key = variant.strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(variant.strip())
+    return deduped[:5]
 
 
 def _parse_scroll_response(scroll_response: Any) -> tuple[list[Any], Any]:
@@ -132,6 +169,26 @@ def _parse_search_response(search_response: Any) -> list[Any]:
         return list(search_response)
     except Exception:
         return []
+
+
+def _merge_search_hits(hit_groups: list[list[Any]]) -> list[Any]:
+    merged: dict[str, Any] = {}
+    for hits in hit_groups:
+        if not hits:
+            continue
+        for hit in hits:
+            hit_id = str(getattr(hit, "id", ""))
+            if not hit_id:
+                continue
+            score = _to_float(getattr(hit, "score", 0.0), 0.0)
+            existing = merged.get(hit_id)
+            if existing is None or score > _to_float(getattr(existing, "score", 0.0), 0.0):
+                merged[hit_id] = hit
+    return sorted(
+        merged.values(),
+        key=lambda item: _to_float(getattr(item, "score", 0.0), 0.0),
+        reverse=True,
+    )
 
 
 def build_filter(filters: Optional[SearchFilters]):
@@ -339,17 +396,23 @@ def search(
 
     logger.info("Searching query=%r filters=%s limit=%s", query, filters, limit)
 
-    query_vector = embed_text(query)
     db_filter = build_filter(filters) if filters else None
+    fetch_limit = max(1, limit) * 2
+    query_variants = expand_query_variants(query)
+    hit_groups: list[list[Any]] = []
 
-    raw_results = db_client.points.search(
-        COLLECTION_NAME,
-        vector=query_vector,
-        limit=max(1, limit) * 2,  # over-fetch so fusion can rerank
-        filter=db_filter,
-        with_payload=True,
-    )
-    raw_results = _parse_search_response(raw_results)
+    for variant in query_variants:
+        query_vector = embed_text(variant)
+        raw_results = db_client.points.search(
+            COLLECTION_NAME,
+            vector=query_vector,
+            limit=fetch_limit,
+            filter=db_filter,
+            with_payload=True,
+        )
+        hit_groups.append(_parse_search_response(raw_results))
+
+    raw_results = _merge_search_hits(hit_groups)
 
     fused = motion_aware_fusion(raw_results)
     fused = apply_structured_post_filters(fused, filters)

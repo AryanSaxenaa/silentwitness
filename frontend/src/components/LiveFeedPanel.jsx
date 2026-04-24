@@ -37,10 +37,27 @@ export default function LiveFeedPanel() {
 
   const activeFeeds = Object.entries(status).filter(([, s]) => s.running)
   const hasActive = activeFeeds.length > 0
+  const helperTextStyle = {
+    color: 'var(--text-muted)',
+    textTransform: 'none',
+    letterSpacing: 'normal',
+    fontSize: '11px',
+    lineHeight: '1.55',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    whiteSpace: 'normal',
+    display: 'block',
+    width: '100%',
+    maxWidth: '100%',
+  }
+  const helperTinyStyle = {
+    ...helperTextStyle,
+    fontSize: '10px',
+  }
 
   return (
-    <div className="space-y-4">
-      <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5', overflowWrap: 'anywhere' }}>
+    <div className="space-y-4 min-w-0">
+      <p className="section-label" style={helperTextStyle}>
         Live capture is optional. Use it only if you want to index a webcam or RTSP source in real time.
       </p>
 
@@ -113,7 +130,7 @@ export default function LiveFeedPanel() {
               className="input-field"
               style={{ fontSize: '13px' }}
             />
-            <p className="section-label mt-1" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '10px', overflowWrap: 'anywhere' }}>
+            <p className="section-label mt-1" style={helperTinyStyle}>
               0 = built-in webcam · 1 = external USB · rtsp://... = IP camera
             </p>
           </div>
@@ -160,7 +177,7 @@ export default function LiveFeedPanel() {
             </button>
           </Tooltip>
 
-          <p className="section-label" style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 'normal', fontSize: '11px', lineHeight: '1.5', overflowWrap: 'anywhere' }}>
+          <p className="section-label" style={helperTextStyle}>
             Motion-gated — only frames with activity are indexed. New frames are searchable within seconds of capture.
           </p>
         </div>

@@ -18,7 +18,7 @@ function JobStatus({ job }) {
   )
 }
 
-export default function IndexPanel() {
+export default function IndexPanel({ onIndexedCamera }) {
   const [jobs, setJobs] = useState({})
   const [uploading, setUploading] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -26,6 +26,7 @@ export default function IndexPanel() {
   const [cameraId, setCameraId] = useState('')
   const [footage, setFootage] = useState([])
   const fileRef = useRef()
+  const announcedJobsRef = useRef(new Set())
 
   const hasActiveJobs = Object.values(jobs).some((job) =>
     ['queued', 'running'].includes(job?.status)
@@ -41,6 +42,16 @@ export default function IndexPanel() {
         const nextJobs = await getIndexingJobs()
         if (!cancelled) {
           setJobs(nextJobs)
+          Object.entries(nextJobs).forEach(([jobId, job]) => {
+            if (
+              job?.status === 'done' &&
+              job?.camera_id &&
+              !announcedJobsRef.current.has(jobId)
+            ) {
+              announcedJobsRef.current.add(jobId)
+              onIndexedCamera?.(job)
+            }
+          })
         }
       } catch {
         // Keep the panel resilient if the backend is warming up.
@@ -57,7 +68,7 @@ export default function IndexPanel() {
       cancelled = true
       clearTimeout(timeoutId)
     }
-  }, [hasActiveJobs])
+  }, [hasActiveJobs, onIndexedCamera])
 
   useEffect(() => {
     listFootage()

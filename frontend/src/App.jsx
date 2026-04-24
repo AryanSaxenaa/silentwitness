@@ -65,6 +65,7 @@ export default function App() {
   const [selectedFrame, setSelectedFrame] = useState(null)
   const [activePanel, setActivePanel] = useState('index')
   const [hasSearched, setHasSearched] = useState(false)
+  const [searchContext, setSearchContext] = useState({ activeCamera: null, sourceVideo: null })
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') return 'light'
     return window.localStorage.getItem('silentwitness-theme') || 'light'
@@ -144,6 +145,28 @@ export default function App() {
     { title: '2. Index frames', copy: 'Run scan once so SilentWitness extracts motion-gated frames into Actian VectorAI DB.' },
     { title: '3. Search and pivot', copy: 'Search in plain language, refine with filters or OCR text, then pivot into visually similar moments.' },
   ]
+  const isStreetCamera = (filters.cameraId || searchContext.activeCamera) === 'cam3'
+  const suggestedQueries = isStreetCamera
+    ? ['white van', 'ambulance', 'vehicle on road', 'street traffic', 'cars on street', 'emergency vehicle']
+    : ['person entering store', 'person near shelves', 'person walking in the store', 'two people in frame', 'person at entrance', 'customer moving through aisle']
+  const suggestionLabel = isStreetCamera
+    ? 'Suggested prompts for the street clip'
+    : 'Suggested prompts for current demo footage'
+
+  const handleIndexedCamera = (job) => {
+    const nextFilters = { ...filters }
+    if (job.camera_id) nextFilters.cameraId = job.camera_id
+    if (job.recording_start) {
+      const dt = new Date(job.recording_start)
+      if (!Number.isNaN(dt.getTime())) {
+        nextFilters.date = dt.toISOString().slice(0, 10)
+        nextFilters.hourStart = dt.getHours()
+        nextFilters.hourEnd = Math.min(23, dt.getHours() + 1)
+      }
+    }
+    setFilters(nextFilters)
+    setSearchContext({ activeCamera: job.camera_id || null, sourceVideo: job.video || null })
+  }
 
   return (
     <main className="app-shell">
@@ -215,7 +238,13 @@ export default function App() {
           </div>
 
           <div className="hero-console__search">
-            <SearchBar onSearch={handleSearch} loading={loading} onVoiceResult={handleVoiceResult} />
+            <SearchBar
+              onSearch={handleSearch}
+              loading={loading}
+              onVoiceResult={handleVoiceResult}
+              suggestedQueries={suggestedQueries}
+              suggestionLabel={suggestionLabel}
+            />
           </div>
 
           <div className="hero-console__stats">
@@ -383,7 +412,7 @@ export default function App() {
                   </button>
                 </Tooltip>
               </div>
-              {activePanel === 'live' ? <LiveFeedPanel /> : <IndexPanel />}
+              {activePanel === 'live' ? <LiveFeedPanel /> : <IndexPanel onIndexedCamera={handleIndexedCamera} />}
             </div>
 
             <div className="console-panel" id="status-section">

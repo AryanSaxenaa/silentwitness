@@ -3,7 +3,7 @@ import { Search, Loader2, X, ArrowRight } from 'lucide-react'
 import VoiceButton from './VoiceButton'
 import Tooltip from './Tooltip'
 
-const EXAMPLE_QUERIES = [
+const DEFAULT_EXAMPLE_QUERIES = [
   'person entering store',
   'person near shelves',
   'person walking in the store',
@@ -12,7 +12,7 @@ const EXAMPLE_QUERIES = [
   'customer moving through aisle',
 ]
 
-export default function SearchBar({ onSearch, loading, onVoiceResult }) {
+export default function SearchBar({ onSearch, loading, onVoiceResult, suggestedQueries = DEFAULT_EXAMPLE_QUERIES, suggestionLabel = 'Suggested prompts for current demo footage' }) {
   const [query, setQuery] = useState('')
   const inputRef = useRef(null)
 
@@ -111,8 +111,8 @@ export default function SearchBar({ onSearch, loading, onVoiceResult }) {
       </form>
 
       <div className="mt-4 flex flex-wrap gap-2 items-center">
-        <span className="section-label mr-1">Suggested prompts for current demo footage</span>
-        {EXAMPLE_QUERIES.map((q) => (
+        <span className="section-label mr-1">{suggestionLabel}</span>
+        {suggestedQueries.map((q) => (
           <Tooltip key={q} content={`Fill the search box with: ${q}`}>
             <button
               onClick={() => handleExample(q)}
