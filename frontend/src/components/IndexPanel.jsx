@@ -32,7 +32,7 @@ export default function IndexPanel({ onIndexedCamera }) {
     ['queued', 'running'].includes(job?.status)
   )
 
-  // Poll job statuses aggressively only while work is active.
+  // Poll job statuses while work is active, but back off hard when idle.
   useEffect(() => {
     let timeoutId
     let cancelled = false
@@ -57,7 +57,7 @@ export default function IndexPanel({ onIndexedCamera }) {
         // Keep the panel resilient if the backend is warming up.
       } finally {
         if (!cancelled) {
-          const delay = hasActiveJobs ? 5000 : 20000
+          const delay = hasActiveJobs ? 10000 : 60000
           timeoutId = setTimeout(poll, delay)
         }
       }

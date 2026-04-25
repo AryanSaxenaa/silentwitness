@@ -10,13 +10,17 @@ export default function LiveFeedPanel() {
   const [cameraId, setCameraId] = useState('live')
   const [fps, setFps] = useState(1)
 
-  // Poll status every 2 seconds
+  // Poll live status conservatively to avoid unnecessary backend pressure.
   useEffect(() => {
     const poll = async () => {
       try { setStatus(await getLiveStatus()) } catch {}
     }
     poll()
-    const interval = setInterval(poll, 2000)
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        poll()
+      }
+    }, 5000)
     return () => clearInterval(interval)
   }, [])
 

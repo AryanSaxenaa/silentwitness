@@ -1,16 +1,4 @@
-import { useEffect, useState } from 'react'
-import { getStatus } from '../api'
-
-export default function StatusBar() {
-  const [status, setStatus] = useState(null)
-
-  useEffect(() => {
-    const fetch = () => getStatus().then(setStatus).catch(() => setStatus({ db_connected: false }))
-    fetch()
-    const interval = setInterval(fetch, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
+export default function StatusBar({ status }) {
   const frames = status?.stats?.total_frames ?? 0
   const cameras = status?.cameras ?? []
   const connected = status?.db_connected ?? false

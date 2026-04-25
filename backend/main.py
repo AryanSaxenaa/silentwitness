@@ -6,6 +6,7 @@ Offline, privacy-first semantic search for security footage.
 import asyncio
 import logging
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -39,6 +40,13 @@ runtime_health: dict[str, Any] = {
     },
     "last_index_job": None,
 }
+STATUS_CACHE_TTL_SEC = 10
+_status_cache: dict[str, Any] = {"checked_at": 0.0, "data": None}
+
+
+def _invalidate_status_cache() -> None:
+    _status_cache["checked_at"] = 0.0
+    _status_cache["data"] = None
 
 
 def _parse_scroll_response(scroll_response: Any) -> tuple[list[Any], Any]:
@@ -184,18 +192,29 @@ def health():
 
 @app.get("/api/status")
 def status():
+    cached = _status_cache.get("data")
+    checked_at = float(_status_cache.get("checked_at") or 0.0)
+    if cached is not None and (time.monotonic() - checked_at) < STATUS_CACHE_TTL_SEC:
+        return cached
+
     try:
         client = get_client()
         stats = collection_stats(client)
         cameras = list_cameras(client)
-        return {
+        payload = {
             "db_connected": True,
             "stats": stats,
             "cameras": cameras,
             "runtime_health": runtime_health,
         }
+        _status_cache["checked_at"] = time.monotonic()
+        _status_cache["data"] = payload
+        return payload
     except Exception as e:
-        return {"db_connected": False, "error": str(e), "runtime_health": runtime_health}
+        payload = {"db_connected": False, "error": str(e), "runtime_health": runtime_health}
+        _status_cache["checked_at"] = time.monotonic()
+        _status_cache["data"] = payload
+        return payload
 
 
 # ─── Search ──────────────────────────────────────────────────────────────────
@@ -266,6 +285,7 @@ def _run_index_job(
     job_id: str, video_path: str, camera_id: Optional[str], fps_sample: float
 ):
     indexing_jobs[job_id] = {"status": "running", "video": os.path.basename(video_path)}
+    _invalidate_status_cache()
     try:
         result = index_video(video_path, camera_id=camera_id, fps_sample=fps_sample)
         indexing_jobs[job_id] = {"status": "done", **result}
@@ -275,6 +295,7 @@ def _run_index_job(
             **result,
         }
         runtime_health["retrieval_sanity"] = _run_retrieval_sanity_check()
+        _invalidate_status_cache()
     except Exception as e:
         indexing_jobs[job_id] = {"status": "error", "error": str(e)}
         runtime_health["last_index_job"] = {
@@ -283,6 +304,7 @@ def _run_index_job(
             "video": os.path.basename(video_path),
             "error": str(e),
         }
+        _invalidate_status_cache()
 
 
 @app.post("/api/index/upload")
@@ -368,6 +390,7 @@ def rebuild_index(background_tasks: BackgroundTasks, fps_sample: float = 1.0):
     client = get_client()
     recreate_collection(client)
     indexing_jobs.clear()
+    _invalidate_status_cache()
     runtime_health["retrieval_sanity"] = {
         "checked_at": None,
         "ok": None,

@@ -20,7 +20,7 @@ import StatusBar from './components/StatusBar'
 import Timeline from './components/Timeline'
 import LiveFeedPanel from './components/LiveFeedPanel'
 import Tooltip from './components/Tooltip'
-import { getStatus, searchFootage, searchSimilar } from './api'
+import { getStatus, rebuildIndex, searchFootage, searchSimilar } from './api'
 
 function SectionTag({ label }) {
   return (
@@ -66,6 +66,7 @@ export default function App() {
   const [activePanel, setActivePanel] = useState('index')
   const [hasSearched, setHasSearched] = useState(false)
   const [searchContext, setSearchContext] = useState({ activeCamera: null, sourceVideo: null })
+  const [recovering, setRecovering] = useState(false)
   const [theme, setTheme] = useState(() => {
     if (typeof window === 'undefined') return 'light'
     return window.localStorage.getItem('silentwitness-theme') || 'light'
@@ -77,7 +78,11 @@ export default function App() {
   useEffect(() => {
     const fetchStatus = () => getStatus().then(setStatus).catch(() => setStatus(null))
     fetchStatus()
-    const interval = setInterval(fetchStatus, 30000)
+    const interval = setInterval(() => {
+      if (document.visibilityState !== 'hidden') {
+        fetchStatus()
+      }
+    }, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -166,6 +171,20 @@ export default function App() {
     }
     setFilters(nextFilters)
     setSearchContext({ activeCamera: job.camera_id || null, sourceVideo: job.video || null })
+  }
+
+  const handleRecoveryRebuild = async () => {
+    setRecovering(true)
+    setError(null)
+    try {
+      await rebuildIndex()
+      const nextStatus = await getStatus().catch(() => null)
+      if (nextStatus) setStatus(nextStatus)
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Rebuild failed')
+    } finally {
+      setRecovering(false)
+    }
   }
 
   return (
@@ -331,9 +350,19 @@ export default function App() {
                     Frames are indexed, but similarity retrieval is unhealthy. Use <strong>Rebuild index</strong> in the operations panel to recover the collection.
                   </p>
                 </div>
-                <button type="button" className="btn-ghost" onClick={() => scrollToId('operations-section')}>
-                  Open operations
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={handleRecoveryRebuild}
+                    disabled={recovering}
+                  >
+                    {recovering ? 'Rebuilding...' : 'Rebuild now'}
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={() => scrollToId('operations-section')}>
+                    Open operations
+                  </button>
+                </div>
               </div>
             )}
 
@@ -423,7 +452,7 @@ export default function App() {
                 </div>
                 <Shield size={14} style={{ color: 'var(--accent)' }} />
               </div>
-              <StatusBar />
+              <StatusBar status={status} />
             </div>
           </div>
         </section>
