@@ -5,6 +5,7 @@ Offline semantic search for security footage.
 SilentWitness turns recorded CCTV-style video into a searchable local investigation tool. It indexes motion-relevant frames, stores vectors and metadata in Actian VectorAI DB, and lets you search footage in plain English, filter by metadata, inspect activity over time, and pivot from any frame into visually similar moments.
 
 Built with [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-db-beta), FastAPI, React, OpenCV, CLIP, Whisper, and Docker.
+[Demo-Deck-Builder.pdf](https://github.com/user-attachments/files/27922632/Demo-Deck-Builder.pdf)
 
 ## Highlights
 
